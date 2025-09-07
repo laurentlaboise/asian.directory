@@ -1,0 +1,292 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>asian.directory - AI Business Search</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e5e7eb; /* bg-gray-200 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #9ca3af; /* bg-gray-400 */
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #1f2937; /* dark:bg-gray-800 */
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #4b5563; /* dark:bg-gray-600 */
+        }
+        textarea {
+            resize: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-200">
+
+    <div class="flex flex-col items-center w-full min-h-screen pt-8 sm:pt-16">
+        
+        <main id="main-content" class="w-full h-full max-w-4xl flex flex-col flex-1 px-4">
+            <!-- Chat messages will appear here -->
+            <div id="chat-container" class="flex-1 w-full space-y-6"></div>
+
+            <!-- Initial screen content -->
+            <div id="initial-screen" class="text-center">
+                <h1 class="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100">asian.directory</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-2">Find businesses in Asia by simply asking AI.</p>
+                
+                <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <span class="text-2xl mb-2">🍜</span>
+                        <span>Restaurants in Tokyo</span>
+                    </button>
+                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <span class="text-2xl mb-2">☕️</span>
+                        <span>Cafes in Seoul</span>
+                    </button>
+                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <span class="text-2xl mb-2">🛍️</span>
+                        <span>Shopping in Bangkok</span>
+                    </button>
+                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <span class="text-2xl mb-2">🏨</span>
+                        <span>Hotels in Singapore</span>
+                    </button>
+                </div>
+
+                <div class="mt-12">
+                    <p class="text-sm text-gray-400 dark:text-gray-500">COVERING BUSINESSES ACROSS ASIA</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-600 mt-2">
+                        Japan • South Korea • China • Singapore • Thailand • Vietnam • Malaysia • Indonesia • Philippines • India & more
+                    </p>
+                </div>
+            </div>
+
+            <!-- Prompt Input Area (shared) -->
+            <div class="w-full sticky bottom-0 py-6 bg-gray-100 dark:bg-black">
+                <form id="prompt-form" class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-2 flex items-end gap-2">
+                    <textarea id="prompt-input" rows="1" class="flex-1 w-full bg-transparent p-2 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none" placeholder="Ask for a business, e.g., 'Find a good ramen spot in Tokyo'"></textarea>
+                    <button id="send-button" type="submit" class="bg-yellow-400 text-gray-900 p-2 rounded-lg hover:bg-yellow-500 disabled:bg-yellow-200 disabled:cursor-not-allowed transition-colors">
+                        <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- DATA (Updated for Asia with more details) ---
+        const businesses = [
+            { id: 1, name: "Ichiran Ramen", category: "Restaurant", description: "Famous for its classic Tonkotsu ramen with customizable solo dining booths. A must-try for any ramen lover.", address: "Shibuya, Tokyo, Japan", website: "https://en.ichiran.com/shop/tokyo-shibuya/", phone: "+81 3-5428-3444", socials: { instagram: "ichiran_jp", x: "ICHIRANJAPAN" }, keywords: ["ramen", "noodle", "japanese", "food", "tokyo"] },
+            { id: 2, name: "Gardens by the Bay", category: "Attraction", description: "Iconic nature park spanning 101 hectares, featuring the Supertree Grove and cooled conservatories.", address: "Marina Gardens Dr, Singapore", website: "https://www.gardensbythebay.com.sg", phone: "+65 6420 6848", socials: { instagram: "gardensbythebay", facebook: "gardensbythebay", tiktok: "gardensbythebay", youtube: "gardensbythebay" }, keywords: ["park", "nature", "tourist", "singapore", "flowers", "supertree"] },
+            { id: 3, name: "Onion Cafe", category: "Coffee Shop", description: "A trendy, industrial-chic cafe in a renovated factory building, known for its specialty coffee and baked goods.", address: "Seongsu-dong, Seoul, South Korea", website: null, phone: "+82 2-1644-1629", socials: { instagram: "cafe.onion" }, keywords: ["coffee", "cafe", "bakery", "seoul", "korea", "trendy"] },
+            { id: 4, name: "Chatuchak Weekend Market", category: "Market", description: "One of the world's largest outdoor markets, offering everything from clothing to street food.", address: "Kamphaeng Phet 2 Rd, Bangkok, Thailand", website: "http://www.chatuchakmarket.org/", phone: null, socials: { facebook: "ChatuchakMarket" }, keywords: ["market", "shopping", "food", "bangkok", "thailand", "souvenirs"] },
+            { id: 5, name: "The Bombay Canteen", category: "Restaurant", description: "Celebrates Indian cuisine with a modern twist in a vibrant, retro-inspired setting.", address: "Lower Parel, Mumbai, India", website: "https://www.thebombaycanteen.com/", phone: "+91 22 4966 6666", socials: { instagram: "thebombaycanteen", facebook: "TheBombayCanteen", x: "TheBombayCanteen" }, keywords: ["indian", "food", "restaurant", "mumbai", "modern", "dinner"] }
+        ];
+
+        // --- DOM ELEMENTS ---
+        const mainContent = document.getElementById('main-content');
+        const initialScreen = document.getElementById('initial-screen');
+        const chatContainer = document.getElementById('chat-container');
+        const promptForm = document.getElementById('prompt-form');
+        const promptInput = document.getElementById('prompt-input');
+        const sendButton = document.getElementById('send-button');
+        let isChatActive = false;
+
+        // --- CORE FUNCTIONS ---
+        const scrollToBottom = () => { window.scrollTo(0, document.body.scrollHeight); };
+
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = `${promptInput.scrollHeight}px`;
+        });
+
+        promptForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const userPrompt = promptInput.value.trim();
+            if (userPrompt) {
+                if (!isChatActive) {
+                    initialScreen.style.display = 'none';
+                    mainContent.classList.remove('justify-between');
+                    isChatActive = true;
+                }
+                addUserMessage(userPrompt);
+                promptInput.value = '';
+                promptInput.style.height = 'auto';
+                getAIResponse(userPrompt);
+            }
+        });
+        
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); promptForm.requestSubmit(); }
+        });
+
+        // Event delegation for info buttons
+        chatContainer.addEventListener('click', function(event) {
+            const button = event.target.closest('.more-info-btn');
+            if (button) {
+                const infoId = button.dataset.infoId;
+                const infoContent = document.getElementById(`info-${infoId}`);
+                const icon = button.querySelector('svg');
+                if (infoContent) {
+                    infoContent.classList.toggle('hidden');
+                    icon.classList.toggle('rotate-180');
+                }
+            }
+        });
+
+        const addUserMessage = (text) => {
+            const messageHtml = `
+                <div class="flex items-start gap-3 justify-end">
+                    <div class="bg-yellow-400 text-gray-900 p-3 rounded-xl max-w-lg">
+                        <p>${text}</p>
+                    </div>
+                    <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold">U</div>
+                </div>`;
+            chatContainer.innerHTML += messageHtml;
+            scrollToBottom();
+        };
+        
+        const addThinkingIndicator = () => {
+            const thinkingHtml = `
+                <div id="thinking-indicator" class="flex items-start gap-3">
+                     <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C10.63 2 9.32 2.53 8.34 3.51L12 7.17V2zM3.51 8.34C2.53 9.32 2 10.63 2 12h5.17L3.51 8.34zM8.34 20.49C9.32 21.47 10.63 22 12 22v-5.17L8.34 20.49zM20.49 15.66L16.83 12H22c0-1.37-.53-2.68-1.51-3.66zM12 12l-4.16 4.16c.38.25.79.46 1.23.61L12 14.04V12zm0 0l-2.73-2.73c.15-.44.36-.85.61-1.23L12 9.96V12z"/></svg>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-3 rounded-xl">
+                        <div class="flex items-center gap-2">
+                           <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                           <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                           <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                        </div>
+                    </div>
+                </div>`;
+            chatContainer.innerHTML += thinkingHtml;
+            scrollToBottom();
+        }
+
+        const addAIResponse = (results) => {
+            const thinkingIndicator = document.getElementById('thinking-indicator');
+            if (thinkingIndicator) thinkingIndicator.remove();
+            
+            let responseContent;
+            if (results.length === 0) {
+                responseContent = `<p class="text-gray-600 dark:text-gray-400">I couldn't find any businesses that match your request. Please try asking in a different way!</p>`;
+            } else {
+                 responseContent = `
+                    <p class="mb-4">Of course! Here are a few places in Asia that match your request:</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        ${results.map(business => {
+                            const shortDescription = business.description.split('.')[0] + '.';
+                            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`;
+                            const phoneLink = business.phone ? `tel:${business.phone.replace(/ /g, '')}` : '#';
+                            const socials = business.socials || {};
+
+                            return `
+                            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50 flex flex-col gap-3">
+                                <div>
+                                    <h3 class="font-bold text-lg text-yellow-500 dark:text-yellow-400">${business.name}</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${shortDescription}</p>
+                                </div>
+                                
+                                <a href="${googleMapsUrl}" target="_blank" class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 hover:text-yellow-500 transition-colors">
+                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                     <span>${business.address}</span>
+                                </a>
+
+                                <div class="mt-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                    <div class="flex items-center justify-end">
+                                        <button class="more-info-btn text-gray-400 hover:text-yellow-500 transition-colors" data-info-id="${business.id}" title="More Info">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-300"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                        </button>
+                                    </div>
+                                    <div id="info-${business.id}" class="hidden mt-4 space-y-3">
+                                         ${business.phone ? `
+                                         <a href="${phoneLink}" class="flex items-center gap-2 text-gray-400 hover:text-yellow-500 transition-colors" title="Call">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                                            <span class="text-sm">${business.phone}</span>
+                                          </a>` : ''}
+                                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-400">
+                                            ${business.website ? `
+                                            <a href="${business.website}" target="_blank" class="text-gray-400 hover:text-yellow-500 transition-colors" title="Visit Website">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                            </a>` : ''}
+
+                                            ${business.website && Object.values(socials).some(s => s) ? `<div class="h-5 w-px bg-gray-300 dark:bg-gray-600"></div>` : ''}
+
+                                            <a href="${socials.instagram ? `https://instagram.com/${socials.instagram}` : '#'}" target="_blank" class="${socials.instagram ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="Instagram"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg></a>
+                                            <a href="${socials.facebook ? `https://facebook.com/${socials.facebook}` : '#'}" target="_blank" class="${socials.facebook ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="Facebook"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg></a>
+                                            <a href="${socials.x ? `https://x.com/${socials.x}` : '#'}" target="_blank" class="${socials.x ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="X.com"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></a>
+                                            <a href="${socials.tiktok ? `https://tiktok.com/@${socials.tiktok}` : '#'}" target="_blank" class="${socials.tiktok ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="TikTok"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"/><path d="M12 2v10"/><path d="M8 8a4 4 0 0 0 4 4v0a4 4 0 0 0 4-4"/></svg></a>
+                                            <a href="${socials.youtube ? `https://youtube.com/@${socials.youtube}` : '#'}" target="_blank" class="${socials.youtube ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="YouTube"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10C2.5 6 7.5 4 12 4s9.5 2 9.5 3 0 10 0 10-5.5 2-9.5 2-9.5-2-9.5-3z"/><path d="m10 9 5 3-5 3z"/></svg></a>
+                                            <a href="${socials.linkedin ? `https://linkedin.com/in/${socials.linkedin}` : '#'}" target="_blank" class="${socials.linkedin ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="LinkedIn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+                                            <a href="${socials.pinterest ? `https://pinterest.com/${socials.pinterest}` : '#'}" target="_blank" class="${socials.pinterest ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="Pinterest"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-2.2 0-4-2-4-5 0-3.3 2.8-6 6-6s6 2.7 6 6c0 2.2-1.8 4-4 4"/><path d="M12 12v9c0 1.1-.9 2-2 2s-2-.9-2-2"/><path d="M12 12c2.2 0 4-2 4-5 0-3.3-2.8-6-6-6s-6 2.7-6 6c0 2.2 1.8 4 4 4"/><path d="M12 12v9c0 1.1.9 2 2 2s2-.9 2-2"/></svg></a>
+                                            <a href="${socials.wechat ? `https://wechat.com/${socials.wechat}` : '#'}" target="_blank" class="${socials.wechat ? 'hover:text-yellow-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}" title="WeChat"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 12.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0ZM9.5 12.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0Z"/><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                    </div>`;
+            }
+            
+            const messageHtml = `
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
+                         <svg class="w-6 h-6 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C10.63 2 9.32 2.53 8.34 3.51L12 7.17V2zM3.51 8.34C2.53 9.32 2 10.63 2 12h5.17L3.51 8.34zM8.34 20.49C9.32 21.47 10.63 22 12 22v-5.17L8.34 20.49zM20.49 15.66L16.83 12H22c0-1.37-.53-2.68-1.51-3.66zM12 12l-4.16 4.16c.38.25.79.46 1.23.61L12 14.04V12zm0 0l-2.73-2.73c.15-.44.36-.85.61-1.23L12 9.96V12z"/></svg>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl max-w-4xl w-full">
+                        ${responseContent}
+                    </div>
+                </div>`;
+            chatContainer.innerHTML += messageHtml;
+            scrollToBottom();
+        };
+
+        const getAIResponse = (prompt) => {
+            sendButton.disabled = true;
+            addThinkingIndicator();
+
+            setTimeout(() => {
+                const searchTerms = prompt.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+                if (searchTerms.length === 0) {
+                    addAIResponse([]);
+                    sendButton.disabled = false;
+                    return;
+                }
+                const results = businesses.filter(business => {
+                    const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${business.keywords.join(' ')}`.toLowerCase();
+                    return searchTerms.some(term => businessInfo.includes(term));
+                });
+
+                addAIResponse(results);
+                sendButton.disabled = false;
+            }, 1200);
+        };
+        
+        // --- INITIALIZATION ---
+        document.querySelectorAll('.suggestion-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const suggestionText = btn.querySelector('span:last-child').textContent;
+                promptInput.value = suggestionText;
+                promptForm.requestSubmit();
+            });
+        });
+
+    </script>
+</body>
+</html>
+
+
