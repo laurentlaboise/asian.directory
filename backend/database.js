@@ -33,6 +33,16 @@ function initDatabase() {
         )
     `);
 
+    // Users table for admin authentication
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
     console.log('Database initialized successfully');
 }
 
@@ -215,6 +225,34 @@ const dbOperations = {
             ai_response: JSON.parse(conv.ai_response),
             business_ids: JSON.parse(conv.business_ids)
         }));
+    },
+
+    // User authentication operations
+    createUser: (username, hashedPassword) => {
+        const stmt = db.prepare(`
+            INSERT INTO users (username, password)
+            VALUES (?, ?)
+        `);
+        
+        try {
+            const result = stmt.run(username, hashedPassword);
+            return result.lastInsertRowid;
+        } catch (error) {
+            if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                throw new Error('Username already exists');
+            }
+            throw error;
+        }
+    },
+
+    getUserByUsername: (username) => {
+        const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
+        return stmt.get(username);
+    },
+
+    getUserById: (id) => {
+        const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
+        return stmt.get(id);
     }
 };
 
