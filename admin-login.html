@@ -232,6 +232,9 @@
             registerBtn.disabled = true;
             registerBtn.textContent = 'Creating Account...';
 
+            console.log('Attempting registration to:', `${API_BASE_URL}/auth/register`);
+            console.log('Username:', username);
+
             try {
                 const response = await fetch(`${API_BASE_URL}/auth/register`, {
                     method: 'POST',
@@ -239,7 +242,9 @@
                     body: JSON.stringify({ username, password })
                 });
 
+                console.log('Response status:', response.status);
                 const data = await response.json();
+                console.log('Response data:', data);
 
                 if (data.success) {
                     showAlert('Account created successfully! You can now login.', 'success');
