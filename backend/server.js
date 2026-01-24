@@ -74,6 +74,22 @@ app.post('/api/conversations', (req, res) => {
             });
         }
 
+        // Validate that aiResponse is an array
+        if (!Array.isArray(aiResponse)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'aiResponse must be an array' 
+            });
+        }
+
+        // Validate that businessIds is an array if provided
+        if (businessIds !== undefined && !Array.isArray(businessIds)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'businessIds must be an array' 
+            });
+        }
+
         const conversationId = dbOperations.saveConversation(userQuery, aiResponse, businessIds);
         res.json({ 
             success: true, 

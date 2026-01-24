@@ -138,17 +138,34 @@ const dbOperations = {
 
     // Search businesses
     searchBusinesses: (query) => {
-        const businesses = dbOperations.getAllBusinesses();
         const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
         
         if (searchTerms.length === 0) {
             return [];
         }
 
-        return businesses.filter(business => {
-            const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${business.keywords.join(' ')}`.toLowerCase();
-            return searchTerms.some(term => businessInfo.includes(term));
+        // Build SQL query with LIKE clauses for better performance
+        const likeConditions = searchTerms.map(() => 
+            '(LOWER(name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(description) LIKE ? OR LOWER(address) LIKE ? OR LOWER(keywords) LIKE ?)'
+        ).join(' OR ');
+        
+        const sql = `SELECT * FROM businesses WHERE ${likeConditions} ORDER BY created_at DESC`;
+        
+        // Flatten search terms for parameterized query
+        const params = searchTerms.flatMap(term => {
+            const likeTerm = `%${term}%`;
+            return [likeTerm, likeTerm, likeTerm, likeTerm, likeTerm];
         });
+        
+        const stmt = db.prepare(sql);
+        const businesses = stmt.all(...params);
+        
+        // Parse JSON fields
+        return businesses.map(business => ({
+            ...business,
+            socials: business.socials ? JSON.parse(business.socials) : {},
+            keywords: business.keywords ? JSON.parse(business.keywords) : []
+        }));
     },
 
     // Add new business
