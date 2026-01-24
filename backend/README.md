@@ -39,6 +39,125 @@ npm start
 
 The API server will start on `http://localhost:3000` (or the port specified in your `.env` file).
 
+## Accessing the Backend
+
+Once the server is running, you can access it in several ways:
+
+### 1. Web Browser
+
+Open your browser and navigate to any of these URLs:
+
+- **Health Check**: http://localhost:3000/api/health
+  - Verify the server is running
+  
+- **View All Businesses**: http://localhost:3000/api/businesses
+  - See all businesses in JSON format
+  
+- **Search Businesses**: http://localhost:3000/api/businesses/search?q=ramen
+  - Search for businesses (replace "ramen" with your search term)
+  
+- **View Conversations**: http://localhost:3000/api/conversations
+  - See conversation history
+
+### 2. Command Line (curl)
+
+```bash
+# Check if backend is running
+curl http://localhost:3000/api/health
+
+# Get all businesses
+curl http://localhost:3000/api/businesses
+
+# Search for businesses
+curl "http://localhost:3000/api/businesses/search?q=ramen"
+
+# Add a new business
+curl -X POST http://localhost:3000/api/businesses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sample Restaurant",
+    "category": "Restaurant",
+    "description": "A great place to eat",
+    "address": "123 Main St, Tokyo",
+    "website": "https://example.com",
+    "phone": "+81-3-1234-5678",
+    "socials": {"instagram": "sample_restaurant"},
+    "keywords": ["restaurant", "food", "tokyo"]
+  }'
+```
+
+### 3. API Testing Tools
+
+Use tools like **Postman**, **Insomnia**, or **Thunder Client** (VS Code extension):
+- Set the base URL to: `http://localhost:3000`
+- Add endpoints like `/api/health`, `/api/businesses`, etc.
+- For POST requests, set Content-Type to `application/json`
+
+### 4. From Your Frontend Application
+
+The frontend at `http://localhost:8080` automatically connects to the backend. If you need to change the backend URL, update the `API_BASE_URL` in `index.html`:
+
+```javascript
+const API_BASE_URL = 'http://localhost:3000/api';
+```
+
+### Verifying Backend Access
+
+After starting the server, verify it's working:
+
+```bash
+# Quick verification
+curl http://localhost:3000/api/health
+
+# Expected output:
+# {"status":"ok","message":"Asian Directory API is running"}
+```
+
+If you see the JSON response above, your backend is working correctly!
+
+### Accessing the Database Directly
+
+To view or query the SQLite database directly:
+
+```bash
+# Install sqlite3 if not already installed
+# On macOS: brew install sqlite3
+# On Ubuntu: sudo apt-get install sqlite3
+
+# Open the database
+sqlite3 backend/asian-directory.db
+
+# Example queries:
+sqlite> SELECT * FROM businesses;
+sqlite> SELECT * FROM conversations ORDER BY created_at DESC LIMIT 10;
+sqlite> .schema businesses
+sqlite> .quit
+```
+
+Or use a GUI tool like:
+- **DB Browser for SQLite** (https://sqlitebrowser.org/)
+- **TablePlus** (https://tableplus.com/)
+- **DBeaver** (https://dbeaver.io/)
+
+### Troubleshooting Access
+
+**Problem: Cannot connect to backend**
+- Check if the server is running: `curl http://localhost:3000/api/health`
+- Verify the port is not in use by another application
+- Check for error messages in the terminal where you ran `npm start`
+
+**Problem: "Connection refused" or "ECONNREFUSED"**
+- Make sure you started the backend: `cd backend && npm start`
+- Check that you're using the correct port (default is 3000)
+
+**Problem: CORS errors in browser**
+- CORS is enabled by default for all origins
+- If you need to restrict origins, set `ALLOWED_ORIGINS` in your `.env` file
+
+**Problem: 404 Not Found**
+- Ensure you're using the correct URL format: `http://localhost:3000/api/...`
+- Note the `/api` prefix is required for all endpoints
+
 ## API Endpoints
 
 ### Health Check
@@ -143,3 +262,20 @@ The server uses simple Node.js with Express. Any changes to the code require a r
 - **Express.js** - Web framework
 - **better-sqlite3** - Database driver
 - **cors** - CORS middleware
+
+## Quick Reference
+
+### Backend URLs (when running locally)
+- Backend API: `http://localhost:3000`
+- Health Check: `http://localhost:3000/api/health`
+- All Businesses: `http://localhost:3000/api/businesses`
+- Search: `http://localhost:3000/api/businesses/search?q=<query>`
+- Conversations: `http://localhost:3000/api/conversations`
+
+### Database Location
+- File: `backend/asian-directory.db`
+- Access via SQLite CLI or GUI tools
+
+### Environment Variables
+- `PORT` - Server port (default: 3000)
+- `ALLOWED_ORIGINS` - CORS allowed origins (default: all)
