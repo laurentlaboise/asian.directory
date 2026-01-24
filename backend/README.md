@@ -77,6 +77,15 @@ The API server will start on `http://localhost:3000` (or the port specified in y
     ```
   - Response: `{ "success": true, "id": 123 }`
 
+- **PUT** `/api/businesses/:id`
+  - Update an existing business
+  - Body (JSON): Same structure as POST
+  - Response: `{ "success": true, "message": "Business updated successfully" }`
+
+- **DELETE** `/api/businesses/:id`
+  - Delete a business by ID
+  - Response: `{ "success": true, "message": "Business deleted successfully" }`
+
 ### Conversations
 
 - **GET** `/api/conversations`

@@ -8,6 +8,7 @@ AI-driven business directory for Asia with database backend.
 - 🔄 **Real-time Updates**: Add businesses via API and see them immediately in search
 - 📊 **Conversation Tracking**: Automatic logging of user queries and AI responses
 - 🌏 **Asia-Focused**: Covering businesses across Japan, Korea, China, Singapore, Thailand, Vietnam, Malaysia, Indonesia, Philippines, India, and more
+- 🛠️ **Admin Panel**: User-friendly interface for managing business data
 
 ## Quick Start
 
@@ -25,6 +26,9 @@ python3 -m http.server 8080
 
 ### 3. Open Browser
 Navigate to `http://localhost:8080`
+
+### 4. Access Admin Panel
+Navigate to `http://localhost:8080/admin.html` to add/manage businesses
 
 For detailed setup instructions, see [SETUP.md](SETUP.md)
 

@@ -25,6 +25,23 @@ app.get('/api/businesses', (req, res) => {
     }
 });
 
+// Get single business by ID
+app.get('/api/businesses/:id', (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const business = dbOperations.getBusinessById(businessId);
+        
+        if (business) {
+            res.json({ success: true, data: business });
+        } else {
+            res.status(404).json({ success: false, error: 'Business not found' });
+        }
+    } catch (error) {
+        console.error('Error fetching business:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch business' });
+    }
+});
+
 // Search businesses
 app.get('/api/businesses/search', (req, res) => {
     try {
@@ -59,6 +76,62 @@ app.post('/api/businesses', (req, res) => {
     } catch (error) {
         console.error('Error adding business:', error);
         res.status(500).json({ success: false, error: 'Failed to add business' });
+    }
+});
+
+// Update business
+app.put('/api/businesses/:id', (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const business = req.body;
+        
+        // Basic validation
+        if (!business.name || !business.category || !business.description || !business.address) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required fields: name, category, description, address' 
+            });
+        }
+
+        const updated = dbOperations.updateBusiness(businessId, business);
+        
+        if (updated) {
+            res.json({ 
+                success: true, 
+                message: 'Business updated successfully' 
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                error: 'Business not found' 
+            });
+        }
+    } catch (error) {
+        console.error('Error updating business:', error);
+        res.status(500).json({ success: false, error: 'Failed to update business' });
+    }
+});
+
+// Delete business
+app.delete('/api/businesses/:id', (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const deleted = dbOperations.deleteBusiness(businessId);
+        
+        if (deleted) {
+            res.json({ 
+                success: true, 
+                message: 'Business deleted successfully' 
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                error: 'Business not found' 
+            });
+        }
+    } catch (error) {
+        console.error('Error deleting business:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete business' });
     }
 });
 
@@ -118,11 +191,13 @@ app.listen(PORT, () => {
     console.log(`Asian Directory API server is running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
     console.log(`API endpoints:`);
-    console.log(`  - GET  /api/businesses`);
-    console.log(`  - GET  /api/businesses/search?q=query`);
-    console.log(`  - POST /api/businesses`);
-    console.log(`  - GET  /api/conversations`);
-    console.log(`  - POST /api/conversations`);
+    console.log(`  - GET    /api/businesses`);
+    console.log(`  - GET    /api/businesses/search?q=query`);
+    console.log(`  - POST   /api/businesses`);
+    console.log(`  - PUT    /api/businesses/:id`);
+    console.log(`  - DELETE /api/businesses/:id`);
+    console.log(`  - GET    /api/conversations`);
+    console.log(`  - POST   /api/conversations`);
 });
 
 module.exports = app;
