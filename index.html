@@ -86,14 +86,12 @@
     </div>
 
     <script>
-        // --- DATA (Updated for Asia with more details) ---
-        const businesses = [
-            { id: 1, name: "Ichiran Ramen", category: "Restaurant", description: "Famous for its classic Tonkotsu ramen with customizable solo dining booths. A must-try for any ramen lover.", address: "Shibuya, Tokyo, Japan", website: "https://en.ichiran.com/shop/tokyo-shibuya/", phone: "+81 3-5428-3444", socials: { instagram: "ichiran_jp", x: "ICHIRANJAPAN" }, keywords: ["ramen", "noodle", "japanese", "food", "tokyo"] },
-            { id: 2, name: "Gardens by the Bay", category: "Attraction", description: "Iconic nature park spanning 101 hectares, featuring the Supertree Grove and cooled conservatories.", address: "Marina Gardens Dr, Singapore", website: "https://www.gardensbythebay.com.sg", phone: "+65 6420 6848", socials: { instagram: "gardensbythebay", facebook: "gardensbythebay", tiktok: "gardensbythebay", youtube: "gardensbythebay" }, keywords: ["park", "nature", "tourist", "singapore", "flowers", "supertree"] },
-            { id: 3, name: "Onion Cafe", category: "Coffee Shop", description: "A trendy, industrial-chic cafe in a renovated factory building, known for its specialty coffee and baked goods.", address: "Seongsu-dong, Seoul, South Korea", website: null, phone: "+82 2-1644-1629", socials: { instagram: "cafe.onion" }, keywords: ["coffee", "cafe", "bakery", "seoul", "korea", "trendy"] },
-            { id: 4, name: "Chatuchak Weekend Market", category: "Market", description: "One of the world's largest outdoor markets, offering everything from clothing to street food.", address: "Kamphaeng Phet 2 Rd, Bangkok, Thailand", website: "http://www.chatuchakmarket.org/", phone: null, socials: { facebook: "ChatuchakMarket" }, keywords: ["market", "shopping", "food", "bangkok", "thailand", "souvenirs"] },
-            { id: 5, name: "The Bombay Canteen", category: "Restaurant", description: "Celebrates Indian cuisine with a modern twist in a vibrant, retro-inspired setting.", address: "Lower Parel, Mumbai, India", website: "https://www.thebombaycanteen.com/", phone: "+91 22 4966 6666", socials: { instagram: "thebombaycanteen", facebook: "TheBombayCanteen", x: "TheBombayCanteen" }, keywords: ["indian", "food", "restaurant", "mumbai", "modern", "dinner"] }
-        ];
+        // --- CONFIGURATION ---
+        const API_BASE_URL = 'http://localhost:3000/api';
+        
+        // --- DATA ---
+        // Businesses are now loaded from the database via API
+        let businesses = [];
 
         // --- DOM ELEMENTS ---
         const mainContent = document.getElementById('main-content');
@@ -259,24 +257,63 @@
             sendButton.disabled = true;
             addThinkingIndicator();
 
-            setTimeout(() => {
-                const searchTerms = prompt.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-                if (searchTerms.length === 0) {
-                    addAIResponse([]);
+            // Use the API to search businesses
+            fetch(`${API_BASE_URL}/businesses/search?q=${encodeURIComponent(prompt)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const results = data.data;
+                        addAIResponse(results);
+                        
+                        // Save conversation to database
+                        const businessIds = results.map(b => b.id);
+                        fetch(`${API_BASE_URL}/conversations`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                userQuery: prompt,
+                                aiResponse: results,
+                                businessIds: businessIds
+                            })
+                        }).catch(err => console.error('Error saving conversation:', err));
+                    } else {
+                        addAIResponse([]);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching from API:', error);
+                    // Fallback to local search if API is unavailable
+                    const searchTerms = prompt.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+                    if (searchTerms.length === 0) {
+                        addAIResponse([]);
+                    } else {
+                        const results = businesses.filter(business => {
+                            const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${business.keywords.join(' ')}`.toLowerCase();
+                            return searchTerms.some(term => businessInfo.includes(term));
+                        });
+                        addAIResponse(results);
+                    }
+                })
+                .finally(() => {
                     sendButton.disabled = false;
-                    return;
-                }
-                const results = businesses.filter(business => {
-                    const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${business.keywords.join(' ')}`.toLowerCase();
-                    return searchTerms.some(term => businessInfo.includes(term));
                 });
-
-                addAIResponse(results);
-                sendButton.disabled = false;
-            }, 1200);
         };
         
         // --- INITIALIZATION ---
+        // Load businesses from API on page load
+        fetch(`${API_BASE_URL}/businesses`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    businesses = data.data;
+                    console.log(`Loaded ${businesses.length} businesses from database`);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading businesses from API:', error);
+                console.log('Running in offline mode - API features will be limited');
+            });
+
         document.querySelectorAll('.suggestion-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const suggestionText = btn.querySelector('span:last-child').textContent;
