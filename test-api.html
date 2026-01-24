@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test - asian.directory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold mb-4">API Connection Test</h1>
+        
+        <div class="space-y-4">
+            <div>
+                <h2 class="font-semibold">Detected Environment:</h2>
+                <p id="hostname" class="text-sm text-gray-600"></p>
+                <p id="api-url" class="text-sm text-gray-600"></p>
+            </div>
+
+            <button onclick="testHealth()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Test Health Endpoint
+            </button>
+
+            <button onclick="testRegister()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Test Registration
+            </button>
+
+            <div id="results" class="mt-4 p-4 bg-gray-50 rounded text-sm"></div>
+        </div>
+    </div>
+
+    <script>
+        // Same logic as in admin-login.html
+        let API_BASE_URL;
+        if (window.location.hostname === 'localhost') {
+            API_BASE_URL = 'http://localhost:3000/api';
+        } else if (window.location.hostname.includes('asian.directory')) {
+            API_BASE_URL = 'https://asiandirectory-production.up.railway.app/api';
+        } else {
+            API_BASE_URL = window.location.protocol + '//' + window.location.hostname.replace('-8080', '-3000') + '/api';
+        }
+
+        document.getElementById('hostname').textContent = 'Hostname: ' + window.location.hostname;
+        document.getElementById('api-url').textContent = 'API URL: ' + API_BASE_URL;
+
+        async function testHealth() {
+            const results = document.getElementById('results');
+            results.textContent = 'Testing health endpoint...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                results.innerHTML = `<strong>Success!</strong><br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } catch (error) {
+                results.innerHTML = `<strong class="text-red-600">Error:</strong><br>${error.message}`;
+            }
+        }
+
+        async function testRegister() {
+            const results = document.getElementById('results');
+            results.textContent = 'Testing registration endpoint...';
+            
+            const testUser = {
+                username: 'testuser_' + Date.now(),
+                password: 'password123'
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(testUser)
+                });
+                
+                const data = await response.json();
+                
+                results.innerHTML = `
+                    <strong>Response Status: ${response.status}</strong><br>
+                    <strong>Response Data:</strong><br>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                results.innerHTML = `<strong class="text-red-600">Error:</strong><br>${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
