@@ -6,7 +6,7 @@ const { dbOperations } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-please-change-in-production-use-env-variable';
 
 // Middleware
 app.use(cors());
@@ -37,6 +37,7 @@ app.get('/api/health', (req, res) => {
 
 // Authentication endpoints
 // Register new user
+// TODO: Add rate limiting to prevent brute force attacks (e.g., using express-rate-limit)
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -48,10 +49,10 @@ app.post('/api/auth/register', async (req, res) => {
             });
         }
 
-        if (password.length < 4) {
+        if (password.length < 6) {
             return res.status(400).json({ 
                 success: false, 
-                error: 'Password must be at least 4 characters long' 
+                error: 'Password must be at least 6 characters long' 
             });
         }
 
@@ -77,6 +78,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login
+// TODO: Add rate limiting to prevent brute force attacks (e.g., using express-rate-limit)
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;

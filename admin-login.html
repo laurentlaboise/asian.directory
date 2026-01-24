@@ -112,6 +112,7 @@
 
     <script>
         // --- CONFIGURATION ---
+        // For production, update this to your deployed backend URL
         const API_BASE_URL = 'http://localhost:3000/api';
         
         // --- DOM ELEMENTS ---
@@ -214,8 +215,8 @@
             }
 
             // Validate password length
-            if (password.length < 4) {
-                showAlert('Password must be at least 4 characters long.');
+            if (password.length < 6) {
+                showAlert('Password must be at least 6 characters long.');
                 return;
             }
 
