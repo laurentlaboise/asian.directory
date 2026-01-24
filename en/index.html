@@ -35,18 +35,32 @@
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-200">
 
-    <div class="flex flex-col items-center w-full min-h-screen pt-8 sm:pt-16">
+    <div class="flex flex-col items-center w-full min-h-screen">
         
         <main id="main-content" class="w-full h-full max-w-4xl flex flex-col flex-1 px-4">
             <!-- Chat messages will appear here -->
-            <div id="chat-container" class="flex-1 w-full space-y-6"></div>
+            <div id="chat-container" class="flex-1 w-full space-y-6 pt-8 sm:pt-16"></div>
 
             <!-- Initial screen content -->
-            <div id="initial-screen" class="text-center">
-                <h1 class="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100">asian.directory</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-2">Find businesses in Asia by simply asking</p>
+            <div id="initial-screen" class="flex flex-col items-center justify-center min-h-screen py-8">
+                <!-- Title and subtitle -->
+                <div class="text-center mb-8">
+                    <h1 class="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100">asian.directory</h1>
+                    <p class="text-gray-500 dark:text-gray-400 mt-2">Find businesses in Asia by simply asking</p>
+                </div>
 
-                <div class="mt-12">
+                <!-- Prompt Input Area -->
+                <div class="w-full max-w-3xl mb-auto px-4">
+                    <form id="prompt-form" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-2 flex items-end gap-2">
+                        <textarea id="prompt-input" rows="1" class="flex-1 w-full bg-transparent p-2 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none" placeholder="Ask for a business, e.g., 'Find a good ramen spot in Tokyo'"></textarea>
+                        <button id="send-button" type="submit" class="bg-yellow-400 text-gray-900 p-2 rounded-lg hover:bg-yellow-500 disabled:bg-yellow-200 disabled:cursor-not-allowed transition-colors">
+                            <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Coverage section at bottom -->
+                <div class="mt-auto pt-12 pb-8 text-center">
                     <p class="text-sm text-gray-400 dark:text-gray-500 mb-4">coverage business across Asia</p>
                     <div class="flex flex-wrap justify-center gap-3 text-sm">
                         <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Japan</button>
@@ -63,11 +77,11 @@
                 </div>
             </div>
 
-            <!-- Prompt Input Area (shared) -->
-            <div class="w-full sticky bottom-0 py-6 bg-gray-100 dark:bg-black">
-                <form id="prompt-form" class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-2 flex items-end gap-2">
-                    <textarea id="prompt-input" rows="1" class="flex-1 w-full bg-transparent p-2 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none" placeholder="Ask for a business, e.g., 'Find a good ramen spot in Tokyo'"></textarea>
-                    <button id="send-button" type="submit" class="bg-yellow-400 text-gray-900 p-2 rounded-lg hover:bg-yellow-500 disabled:bg-yellow-200 disabled:cursor-not-allowed transition-colors">
+            <!-- Chat mode: Prompt Input Area (sticky at bottom) -->
+            <div id="chat-input" class="w-full sticky bottom-0 py-6 bg-gray-100 dark:bg-black hidden">
+                <form id="prompt-form-chat" class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-2 flex items-end gap-2">
+                    <textarea id="prompt-input-chat" rows="1" class="flex-1 w-full bg-transparent p-2 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none" placeholder="Ask for a business, e.g., 'Find a good ramen spot in Tokyo'"></textarea>
+                    <button id="send-button-chat" type="submit" class="bg-yellow-400 text-gray-900 p-2 rounded-lg hover:bg-yellow-500 disabled:bg-yellow-200 disabled:cursor-not-allowed transition-colors">
                         <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     </button>
                 </form>
@@ -89,14 +103,19 @@
         const mainContent = document.getElementById('main-content');
         const initialScreen = document.getElementById('initial-screen');
         const chatContainer = document.getElementById('chat-container');
+        const chatInput = document.getElementById('chat-input');
         const promptForm = document.getElementById('prompt-form');
         const promptInput = document.getElementById('prompt-input');
         const sendButton = document.getElementById('send-button');
+        const promptFormChat = document.getElementById('prompt-form-chat');
+        const promptInputChat = document.getElementById('prompt-input-chat');
+        const sendButtonChat = document.getElementById('send-button-chat');
         let isChatActive = false;
 
         // --- CORE FUNCTIONS ---
         const scrollToBottom = () => { window.scrollTo(0, document.body.scrollHeight); };
 
+        // Handle initial form
         promptInput.addEventListener('input', () => {
             promptInput.style.height = 'auto';
             promptInput.style.height = `${promptInput.scrollHeight}px`;
@@ -108,7 +127,7 @@
             if (userPrompt) {
                 if (!isChatActive) {
                     initialScreen.style.display = 'none';
-                    mainContent.classList.remove('justify-between');
+                    chatInput.classList.remove('hidden');
                     isChatActive = true;
                 }
                 addUserMessage(userPrompt);
@@ -120,6 +139,27 @@
         
         promptInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); promptForm.requestSubmit(); }
+        });
+
+        // Handle chat mode form
+        promptInputChat.addEventListener('input', () => {
+            promptInputChat.style.height = 'auto';
+            promptInputChat.style.height = `${promptInputChat.scrollHeight}px`;
+        });
+
+        promptFormChat.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const userPrompt = promptInputChat.value.trim();
+            if (userPrompt) {
+                addUserMessage(userPrompt);
+                promptInputChat.value = '';
+                promptInputChat.style.height = 'auto';
+                getAIResponse(userPrompt);
+            }
+        });
+        
+        promptInputChat.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); promptFormChat.requestSubmit(); }
         });
 
         // Event delegation for info buttons
@@ -247,6 +287,7 @@
 
         const getAIResponse = (prompt) => {
             sendButton.disabled = true;
+            sendButtonChat.disabled = true;
             addThinkingIndicator();
 
             setTimeout(() => {
@@ -254,6 +295,7 @@
                 if (searchTerms.length === 0) {
                     addAIResponse([]);
                     sendButton.disabled = false;
+                    sendButtonChat.disabled = false;
                     return;
                 }
                 const results = businesses.filter(business => {
@@ -263,6 +305,7 @@
 
                 addAIResponse(results);
                 sendButton.disabled = false;
+                sendButtonChat.disabled = false;
             }, 1200);
         };
         
