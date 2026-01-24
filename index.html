@@ -39,7 +39,7 @@
         
         <main id="main-content" class="w-full h-full max-w-4xl flex flex-col flex-1 px-4">
             <!-- New Chat Button (visible only in chat mode) -->
-            <div id="new-chat-header" class="hidden w-full pt-4 pb-2">
+            <div id="new-chat-header" style="display: none;" class="w-full pt-4 pb-2">
                 <button id="new-chat-btn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-400 text-gray-900 hover:bg-yellow-500 transition-colors font-medium">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 5v14M5 12h14"/>
@@ -89,7 +89,7 @@
             </div>
 
             <!-- Chat mode: Prompt Input Area (sticky at bottom) -->
-            <div id="chat-input" class="w-full sticky bottom-0 py-6 bg-gray-100 dark:bg-black hidden">
+            <div id="chat-input" style="display: none;" class="w-full sticky bottom-0 py-6 bg-gray-100 dark:bg-black">
                 <form id="prompt-form-chat" class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-2 flex items-end gap-2">
                     <textarea id="prompt-input-chat" rows="1" class="flex-1 w-full bg-transparent p-2 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none" placeholder="Ask for a business, e.g., 'Find a good ramen spot in Tokyo'"></textarea>
                     <button id="send-button-chat" type="submit" class="bg-yellow-400 text-gray-900 p-2 rounded-lg hover:bg-yellow-500 disabled:bg-yellow-200 disabled:cursor-not-allowed transition-colors">
@@ -132,8 +132,8 @@
             chatContainer.innerHTML = '';
             
             // Hide chat elements and show initial screen
-            chatInput.classList.add('hidden');
-            newChatHeader.classList.add('hidden');
+            chatInput.style.display = 'none';
+            newChatHeader.style.display = 'none';
             initialScreen.style.display = '';
             
             // Reset chat active state
@@ -164,8 +164,8 @@
             if (userPrompt) {
                 if (!isChatActive) {
                     initialScreen.style.display = 'none';
-                    chatInput.classList.remove('hidden');
-                    newChatHeader.classList.remove('hidden');
+                    chatInput.style.display = '';
+                    newChatHeader.style.display = '';
                     isChatActive = true;
                 }
                 addUserMessage(userPrompt);
