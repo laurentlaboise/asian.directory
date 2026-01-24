@@ -42,7 +42,7 @@
             <div id="chat-container" class="flex-1 w-full space-y-6 pt-8 sm:pt-16"></div>
 
             <!-- Initial screen content -->
-            <div id="initial-screen" class="flex flex-col items-center justify-center min-h-screen py-8">
+            <div id="initial-screen" class="flex flex-col items-center justify-center flex-1 py-8">
                 <!-- Title and subtitle -->
                 <div class="text-center mb-8">
                     <h1 class="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100">asian.directory</h1>
@@ -313,8 +313,15 @@
         document.querySelectorAll('.country-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const countryName = btn.textContent;
-                promptInput.value = `Find businesses in ${countryName}`;
-                promptForm.requestSubmit();
+                const queryText = `Find businesses in ${countryName}`;
+                
+                if (!isChatActive) {
+                    promptInput.value = queryText;
+                    promptForm.requestSubmit();
+                } else {
+                    promptInputChat.value = queryText;
+                    promptFormChat.requestSubmit();
+                }
             });
         });
 
