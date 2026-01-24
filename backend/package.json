@@ -1,0 +1,18 @@
+{
+  "name": "asian-directory-backend",
+  "version": "1.0.0",
+  "description": "Backend API for asian.directory with database support",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["api", "database", "express"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "better-sqlite3": "^9.2.2"
+  }
+}
