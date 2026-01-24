@@ -112,8 +112,17 @@
 
     <script>
         // --- CONFIGURATION ---
-        // For production, update this to your deployed backend URL
-        const API_BASE_URL = 'http://localhost:3000/api';
+        // Auto-detect environment and use appropriate API URL
+        let API_BASE_URL;
+        if (window.location.hostname === 'localhost') {
+            API_BASE_URL = 'http://localhost:3000/api';
+        } else if (window.location.hostname.includes('asian.directory')) {
+            // Production
+            API_BASE_URL = 'https://asiandirectory-production.up.railway.app/api';
+        } else {
+            // Codespaces
+            API_BASE_URL = window.location.protocol + '//' + window.location.hostname.replace('-8080', '-3000') + '/api';
+        }
         
         // --- DATA ---
         // Businesses are now loaded from the database via API
