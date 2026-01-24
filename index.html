@@ -44,32 +44,22 @@
             <!-- Initial screen content -->
             <div id="initial-screen" class="text-center">
                 <h1 class="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100">asian.directory</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-2">Find businesses in Asia by simply asking AI.</p>
-                
-                <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <span class="text-2xl mb-2">🍜</span>
-                        <span>Restaurants in Tokyo</span>
-                    </button>
-                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <span class="text-2xl mb-2">☕️</span>
-                        <span>Cafes in Seoul</span>
-                    </button>
-                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <span class="text-2xl mb-2">🛍️</span>
-                        <span>Shopping in Bangkok</span>
-                    </button>
-                     <button class="suggestion-btn aspect-square flex flex-col items-center justify-center p-4 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <span class="text-2xl mb-2">🏨</span>
-                        <span>Hotels in Singapore</span>
-                    </button>
-                </div>
+                <p class="text-gray-500 dark:text-gray-400 mt-2">Find businesses in Asia by simply asking</p>
 
                 <div class="mt-12">
-                    <p class="text-sm text-gray-400 dark:text-gray-500">COVERING BUSINESSES ACROSS ASIA</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-600 mt-2">
-                        Japan • South Korea • China • Singapore • Thailand • Vietnam • Malaysia • Indonesia • Philippines • India & more
-                    </p>
+                    <p class="text-sm text-gray-400 dark:text-gray-500 mb-4">coverage business across Asia</p>
+                    <div class="flex flex-wrap justify-center gap-3 text-sm">
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Japan</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">South Korea</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">China</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Singapore</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Thailand</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Vietnam</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Malaysia</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Indonesia</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Philippines</button>
+                        <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">India</button>
+                    </div>
                 </div>
             </div>
 
@@ -277,10 +267,10 @@
         };
         
         // --- INITIALIZATION ---
-        document.querySelectorAll('.suggestion-btn').forEach(btn => {
+        document.querySelectorAll('.country-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                const suggestionText = btn.querySelector('span:last-child').textContent;
-                promptInput.value = suggestionText;
+                const countryName = btn.textContent;
+                promptInput.value = `Find businesses in ${countryName}`;
                 promptForm.requestSubmit();
             });
         });
