@@ -159,6 +159,26 @@ app.get('/api/businesses/search', (req, res) => {
     }
 });
 
+// Get single business by ID
+app.get('/api/businesses/:id', (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const business = dbOperations.getBusinessById(businessId);
+        
+        if (!business) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Business not found' 
+            });
+        }
+        
+        res.json({ success: true, data: business });
+    } catch (error) {
+        console.error('Error fetching business:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch business' });
+    }
+});
+
 // Add new business
 app.post('/api/businesses', authenticateToken, (req, res) => {
     try {
@@ -181,6 +201,62 @@ app.post('/api/businesses', authenticateToken, (req, res) => {
     } catch (error) {
         console.error('Error adding business:', error);
         res.status(500).json({ success: false, error: 'Failed to add business' });
+    }
+});
+
+// Update business
+app.put('/api/businesses/:id', authenticateToken, (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const business = req.body;
+        
+        // Basic validation
+        if (!business.name || !business.category || !business.description || !business.address) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required fields: name, category, description, address' 
+            });
+        }
+        
+        const success = dbOperations.updateBusiness(businessId, business);
+        
+        if (success) {
+            res.json({ 
+                success: true, 
+                message: 'Business updated successfully' 
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                error: 'Business not found' 
+            });
+        }
+    } catch (error) {
+        console.error('Error updating business:', error);
+        res.status(500).json({ success: false, error: 'Failed to update business' });
+    }
+});
+
+// Delete business
+app.delete('/api/businesses/:id', authenticateToken, (req, res) => {
+    try {
+        const businessId = parseInt(req.params.id);
+        const success = dbOperations.deleteBusiness(businessId);
+        
+        if (success) {
+            res.json({ 
+                success: true, 
+                message: 'Business deleted successfully' 
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                error: 'Business not found' 
+            });
+        }
+    } catch (error) {
+        console.error('Error deleting business:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete business' });
     }
 });
 
@@ -245,7 +321,10 @@ app.listen(PORT, () => {
     console.log(`  - GET  /api/auth/verify`);
     console.log(`  - GET  /api/businesses`);
     console.log(`  - GET  /api/businesses/search?q=query`);
+    console.log(`  - GET  /api/businesses/:id`);
     console.log(`  - POST /api/businesses (requires auth)`);
+    console.log(`  - PUT  /api/businesses/:id (requires auth)`);
+    console.log(`  - DELETE /api/businesses/:id (requires auth)`);
     console.log(`  - GET  /api/conversations`);
     console.log(`  - POST /api/conversations`);
 });

@@ -178,6 +178,20 @@ const dbOperations = {
         }));
     },
 
+    // Get business by ID
+    getBusinessById: (id) => {
+        const stmt = db.prepare('SELECT * FROM businesses WHERE id = ?');
+        const business = stmt.get(id);
+        
+        if (!business) return null;
+        
+        return {
+            ...business,
+            socials: business.socials ? JSON.parse(business.socials) : {},
+            keywords: business.keywords ? JSON.parse(business.keywords) : []
+        };
+    },
+
     // Add new business
     addBusiness: (business) => {
         const stmt = db.prepare(`
@@ -197,6 +211,37 @@ const dbOperations = {
         );
         
         return result.lastInsertRowid;
+    },
+
+    // Update business
+    updateBusiness: (id, business) => {
+        const stmt = db.prepare(`
+            UPDATE businesses 
+            SET name = ?, category = ?, description = ?, address = ?, 
+                website = ?, phone = ?, socials = ?, keywords = ?
+            WHERE id = ?
+        `);
+        
+        const result = stmt.run(
+            business.name,
+            business.category,
+            business.description,
+            business.address,
+            business.website || null,
+            business.phone || null,
+            JSON.stringify(business.socials || {}),
+            JSON.stringify(business.keywords || []),
+            id
+        );
+        
+        return result.changes > 0;
+    },
+
+    // Delete business
+    deleteBusiness: (id) => {
+        const stmt = db.prepare('DELETE FROM businesses WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
     },
 
     // Save conversation
