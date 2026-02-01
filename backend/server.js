@@ -2,7 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { dbOperations } = require('./database');
+
+// Auto-detect database: PostgreSQL if DATABASE_URL exists, else SQLite
+const USE_POSTGRES = !!process.env.DATABASE_URL;
+const { dbOperations } = require(USE_POSTGRES ? './database-postgres' : './database');
+
+console.log(`Using database: ${USE_POSTGRES ? 'PostgreSQL' : 'SQLite'}`);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -91,7 +96,7 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // Get user from database
-        const user = dbOperations.getUserByUsername(username);
+        const user = await dbOperations.getUserByUsername(username);
 
         if (!user) {
             return res.status(401).json({ 
@@ -137,9 +142,9 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 });
 
 // Get all businesses
-app.get('/api/businesses', (req, res) => {
+app.get('/api/businesses', async (req, res) => {
     try {
-        const businesses = dbOperations.getAllBusinesses();
+        const businesses = await dbOperations.getAllBusinesses();
         res.json({ success: true, data: businesses });
     } catch (error) {
         console.error('Error fetching businesses:', error);
@@ -148,10 +153,10 @@ app.get('/api/businesses', (req, res) => {
 });
 
 // Search businesses
-app.get('/api/businesses/search', (req, res) => {
+app.get('/api/businesses/search', async (req, res) => {
     try {
         const query = req.query.q || '';
-        const results = dbOperations.searchBusinesses(query);
+        const results = await dbOperations.searchBusinesses(query);
         res.json({ success: true, data: results, query });
     } catch (error) {
         console.error('Error searching businesses:', error);
@@ -160,10 +165,10 @@ app.get('/api/businesses/search', (req, res) => {
 });
 
 // Get single business by ID
-app.get('/api/businesses/:id', (req, res) => {
+app.get('/api/businesses/:id', async (req, res) => {
     try {
         const businessId = parseInt(req.params.id);
-        const business = dbOperations.getBusinessById(businessId);
+        const business = await dbOperations.getBusinessById(businessId);
         
         if (!business) {
             return res.status(404).json({ 
@@ -180,7 +185,7 @@ app.get('/api/businesses/:id', (req, res) => {
 });
 
 // Add new business
-app.post('/api/businesses', authenticateToken, (req, res) => {
+app.post('/api/businesses', authenticateToken, async (req, res) => {
     try {
         const business = req.body;
         
@@ -192,7 +197,7 @@ app.post('/api/businesses', authenticateToken, (req, res) => {
             });
         }
 
-        const businessId = dbOperations.addBusiness(business);
+        const businessId = await dbOperations.addBusiness(business);
         res.json({ 
             success: true, 
             message: 'Business added successfully', 
@@ -205,7 +210,7 @@ app.post('/api/businesses', authenticateToken, (req, res) => {
 });
 
 // Update business
-app.put('/api/businesses/:id', authenticateToken, (req, res) => {
+app.put('/api/businesses/:id', authenticateToken, async (req, res) => {
     try {
         const businessId = parseInt(req.params.id);
         const business = req.body;
@@ -218,7 +223,7 @@ app.put('/api/businesses/:id', authenticateToken, (req, res) => {
             });
         }
         
-        const success = dbOperations.updateBusiness(businessId, business);
+        const success = await dbOperations.updateBusiness(businessId, business);
         
         if (success) {
             res.json({ 
@@ -238,10 +243,10 @@ app.put('/api/businesses/:id', authenticateToken, (req, res) => {
 });
 
 // Delete business
-app.delete('/api/businesses/:id', authenticateToken, (req, res) => {
+app.delete('/api/businesses/:id', authenticateToken, async (req, res) => {
     try {
         const businessId = parseInt(req.params.id);
-        const success = dbOperations.deleteBusiness(businessId);
+        const success = await dbOperations.deleteBusiness(businessId);
         
         if (success) {
             res.json({ 
@@ -261,7 +266,7 @@ app.delete('/api/businesses/:id', authenticateToken, (req, res) => {
 });
 
 // Save conversation
-app.post('/api/conversations', (req, res) => {
+app.post('/api/conversations', async (req, res) => {
     try {
         const { userQuery, aiResponse, businessIds } = req.body;
         
@@ -288,7 +293,7 @@ app.post('/api/conversations', (req, res) => {
             });
         }
 
-        const conversationId = dbOperations.saveConversation(userQuery, aiResponse, businessIds);
+        const conversationId = await dbOperations.saveConversation(userQuery, aiResponse, businessIds);
         res.json({ 
             success: true, 
             message: 'Conversation saved successfully', 
@@ -301,9 +306,9 @@ app.post('/api/conversations', (req, res) => {
 });
 
 // Get conversation history
-app.get('/api/conversations', (req, res) => {
+app.get('/api/conversations', async (req, res) => {
     try {
-        const conversations = dbOperations.getAllConversations();
+        const conversations = await dbOperations.getAllConversations();
         res.json({ success: true, data: conversations });
     } catch (error) {
         console.error('Error fetching conversations:', error);
