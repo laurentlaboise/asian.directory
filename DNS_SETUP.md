@@ -79,15 +79,12 @@ Make sure these records exist (they're correct):
 
 The CNAME file should contain:
 ```
-www.asian.directory
-```
-
-Or if you want the apex domain as primary:
-```
 asian.directory
 ```
 
-**Current CNAME file:** `www.asian.directory` ✅ (This is correct)
+This configures GitHub Pages to use the apex domain as primary. GitHub will automatically redirect `www.asian.directory` to `asian.directory` when properly configured.
+
+**Current CNAME file:** `asian.directory` ✅ (This is correct)
 
 ### **Step 4: Wait for DNS Propagation**
 
@@ -103,7 +100,7 @@ asian.directory
 2. Settings → Pages
 3. Ensure:
    - Source: Deploy from branch `main` or `master`
-   - Custom domain: `www.asian.directory` or `asian.directory`
+   - Custom domain: `asian.directory`
    - ✅ "Enforce HTTPS" should be checked (after DNS propagates)
 
 ---
