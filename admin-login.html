@@ -107,6 +107,10 @@
         <!-- Footer -->
         <div class="mt-8 text-center text-xs text-gray-400 dark:text-gray-500">
             <p>© 2026 asian.directory. All rights reserved.</p>
+            <div id="server-status" class="mt-2 flex items-center justify-center gap-2">
+                <span class="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                <span>Checking server status...</span>
+            </div>
         </div>
     </div>
 
@@ -130,6 +134,38 @@
         const toggleRegisterBtn = document.getElementById('toggle-register');
         const cancelRegisterBtn = document.getElementById('cancel-register');
         const alertMessage = document.getElementById('alert-message');
+        const serverStatus = document.getElementById('server-status');
+
+        // --- SERVER STATUS CHECK ---
+        async function checkServerStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(10000) // 10 second timeout
+                });
+                
+                if (response.ok) {
+                    serverStatus.innerHTML = `
+                        <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                        <span class="text-green-600 dark:text-green-400">Server online</span>
+                    `;
+                } else {
+                    serverStatus.innerHTML = `
+                        <span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
+                        <span class="text-yellow-600 dark:text-yellow-400">Server responding with errors</span>
+                    `;
+                }
+            } catch (error) {
+                console.error('Server health check failed:', error);
+                serverStatus.innerHTML = `
+                    <span class="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                    <span class="text-red-600 dark:text-red-400">Server unavailable - please try again later</span>
+                `;
+            }
+        }
+
+        // Check server status on page load
+        checkServerStatus();
 
         // --- UTILITY FUNCTIONS ---
         function showAlert(message, type = 'error') {
@@ -145,6 +181,18 @@
             setTimeout(() => {
                 alertMessage.classList.add('hidden');
             }, 5000);
+        }
+
+        function getConnectionErrorMessage(error) {
+            let errorMessage = 'Unable to connect to the server. ';
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                errorMessage += 'The backend server may be temporarily unavailable. Please try again in a few minutes.';
+            } else if (error.message) {
+                errorMessage += error.message;
+            } else {
+                errorMessage += 'Please try again later.';
+            }
+            return errorMessage;
         }
 
         function saveAuthToken(token) {
@@ -202,7 +250,7 @@
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                showAlert('Unable to connect to the server. Please try again later.');
+                showAlert(getConnectionErrorMessage(error));
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Login';
             }
@@ -257,7 +305,7 @@
                 }
             } catch (error) {
                 console.error('Registration error:', error);
-                showAlert('Unable to connect to the server. Please try again later.');
+                showAlert(getConnectionErrorMessage(error));
             } finally {
                 registerBtn.disabled = false;
                 registerBtn.textContent = 'Create Account';
