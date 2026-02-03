@@ -266,5 +266,28 @@ If you're still experiencing problems after following this guide:
 
 ---
 
+## ⚠️ Railway Platform Status
+
+**As of February 3, 2026:** Railway is experiencing platform-wide issues including DNS resolution problems.
+
+### Check Railway Status:
+- Official: https://status.railway.com/
+- StatusGator: https://statusgator.com/services/railway
+- IsDown: https://isdown.app/status/railway
+
+If the backend (`csxbygix.up.railway.app`) is unreachable, this may be due to Railway platform issues, not your DNS configuration.
+
+### Diagnostic Steps:
+
+1. Check Railway status page first
+2. Test backend health: `curl https://csxbygix.up.railway.app/api/health`
+3. If DNS resolution fails, wait for Railway platform recovery
+4. For immediate development, run backend locally:
+   ```bash
+   cd backend && npm install && npm start
+   ```
+
+---
+
 **Last Updated:** February 3, 2026  
-**Status:** DNS configuration documented and issues identified
+**Status:** DNS configuration documented; Railway platform experiencing DNS issues
