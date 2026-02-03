@@ -40,6 +40,8 @@ For complete API documentation and advanced usage, see [backend/README.md](backe
 
 For detailed setup instructions, see [SETUP.md](SETUP.md)
 
+For DNS configuration and domain setup, see [DNS_SETUP.md](DNS_SETUP.md)
+
 ## Tech Stack
 
 - **Frontend**: HTML, CSS (Tailwind), JavaScript
@@ -47,9 +49,13 @@ For detailed setup instructions, see [SETUP.md](SETUP.md)
 - **Database**: SQLite3
 - **API**: RESTful with CORS support
 
-## API Documentation
+## Documentation
 
-See [backend/README.md](backend/README.md) for complete API documentation.
+- [API Documentation](backend/README.md) - Complete API reference
+- [Setup Guide](SETUP.md) - Local development setup
+- [Deployment Guide](DEPLOYMENT.md) - Deploy backend to production
+- [DNS Setup](DNS_SETUP.md) - Domain and DNS configuration
+- [Railway Deployment](RAILWAY_DEPLOYMENT_GUIDE.md) - Deploy to Railway
 
 ## Contributing
 
