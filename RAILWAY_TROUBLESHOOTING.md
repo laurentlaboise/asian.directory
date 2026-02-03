@@ -243,6 +243,52 @@ Once backend is properly deployed:
 
 ---
 
-**Last Updated**: January 30, 2026  
-**Issue**: Railway Root Directory Configuration  
-**Resolution Time**: ~5 minutes
+## Current Status & Known Platform Issues
+
+### Railway Platform Status (as of February 3, 2026)
+
+⚠️ **Railway is currently experiencing issues:**
+
+1. **DNS Resolution Issues** - Some users may be unable to access Railway-hosted services
+2. **Storage Buckets** - Read/write operations may be affected
+3. **Build Failures** - Some builds may fail to complete
+
+**Check Railway Status:**
+- Official: https://status.railway.com/
+- StatusGator: https://statusgator.com/services/railway
+- IsDown: https://isdown.app/status/railway
+
+### Quick Diagnostic Commands
+
+Test if your Railway backend is reachable:
+
+```bash
+# Test DNS resolution
+nslookup csxbygix.up.railway.app
+
+# Test health endpoint
+curl -v https://csxbygix.up.railway.app/api/health
+
+# Check with timeout
+curl --max-time 10 https://csxbygix.up.railway.app/api/health
+```
+
+### If Railway is Down
+
+If Railway platform is experiencing issues:
+
+1. **Wait for Resolution** - Check status page for updates
+2. **Consider Fallback** - The backend supports both SQLite (local) and PostgreSQL
+3. **Local Development** - Run backend locally:
+   ```bash
+   cd backend
+   npm install
+   npm start
+   # Backend runs at http://localhost:3000
+   ```
+
+---
+
+**Last Updated**: February 3, 2026  
+**Issue**: Railway Root Directory Configuration & Platform Status  
+**Resolution Time**: ~5 minutes (configuration) / varies (platform issues)
