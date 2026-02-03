@@ -1,0 +1,18 @@
+# Nixpacks configuration for asian.directory backend
+# Compatible with Nixpacks v1.38.0+
+
+# Define the providers/packages to use
+[phases.setup]
+nixPkgs = ['nodejs_18', 'npm-9_x']
+
+# Install dependencies
+[phases.install]
+cmds = ['npm ci']
+
+# Build phase (not needed for this project, but defined for clarity)
+[phases.build]
+cmds = []
+
+# Start command
+[start]
+cmd = 'npm start'

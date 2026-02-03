@@ -148,6 +148,23 @@ Files that need updating:
 }
 ```
 
+### **Nixpacks Configuration** (`backend/nixpacks.toml`)
+
+This project uses Nixpacks v1.38.0+ for building. The configuration explicitly specifies:
+
+```toml
+[phases.setup]
+nixPkgs = ['nodejs_18', 'npm-9_x']
+
+[phases.install]
+cmds = ['npm ci']
+
+[start]
+cmd = 'npm start'
+```
+
+This ensures consistent builds with Node.js 18 and npm 9.x.
+
 ### **Dependencies** (Automatically Installed)
 
 ```json
