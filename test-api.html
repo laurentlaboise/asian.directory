@@ -35,7 +35,8 @@
         if (window.location.hostname === 'localhost') {
             API_BASE_URL = 'http://localhost:3000/api';
         } else if (window.location.hostname.includes('asian.directory')) {
-            API_BASE_URL = 'https://asian.directory/api';
+            // Production - Backend hosted on Railway
+            API_BASE_URL = 'https://csxbygix.up.railway.app/api';
         } else {
             API_BASE_URL = window.location.protocol + '//' + window.location.hostname.replace('-8080', '-3000') + '/api';
         }
