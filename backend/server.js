@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const packageJson = require('./package.json');
 
 // Auto-detect database: PostgreSQL if DATABASE_URL exists, else SQLite
 const USE_POSTGRES = !!process.env.DATABASE_URL;
@@ -34,6 +35,40 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
+
+// Root route - API information
+app.get('/', (req, res) => {
+    res.json({
+        name: packageJson.name,
+        version: packageJson.version,
+        status: 'running',
+        endpoints: {
+            health: '/api/health',
+            auth: {
+                register: 'POST /api/auth/register',
+                login: 'POST /api/auth/login',
+                verify: 'GET /api/auth/verify'
+            },
+            businesses: {
+                list: 'GET /api/businesses',
+                search: 'GET /api/businesses/search?q=query',
+                get: 'GET /api/businesses/:id',
+                create: 'POST /api/businesses (requires auth)',
+                update: 'PUT /api/businesses/:id (requires auth)',
+                delete: 'DELETE /api/businesses/:id (requires auth)'
+            },
+            conversations: {
+                list: 'GET /api/conversations',
+                create: 'POST /api/conversations'
+            }
+        }
+    });
+});
+
+// Favicon handler - return empty response to prevent 404
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end();
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
