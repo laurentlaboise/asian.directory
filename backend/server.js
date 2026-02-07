@@ -38,7 +38,11 @@ const FACEBOOK_CALLBACK_URL = process.env.FACEBOOK_CALLBACK_URL || 'http://local
 // CORS origins
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080'];
+    : [
+        'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080',
+        'https://asian.directory', 'https://www.asian.directory',
+        'https://asiandirectory-production-7ec4.up.railway.app'
+      ];
 
 // ---------------------------------------------------------------------------
 // Global middleware
@@ -122,6 +126,15 @@ function csrfProtection(req, res, next) {
     }
     // Skip for API-key-authenticated requests
     if (req.headers['x-api-key']) {
+        return next();
+    }
+    // Skip for auth endpoints (stateless JWT, not cookie-session based)
+    if (req.path.startsWith('/auth/') || req.path.startsWith('/api/auth/')) {
+        return next();
+    }
+    // Skip for public endpoints that don't require session auth
+    if (req.path === '/analytics/event' || req.path === '/api/analytics/event' ||
+        req.path === '/conversations' || req.path === '/api/conversations') {
         return next();
     }
 
@@ -323,7 +336,8 @@ function signToken(user) {
 // ---------------------------------------------------------------------------
 // Root -- API information
 // ---------------------------------------------------------------------------
-app.get('/', (req, res) => {
+// API info endpoint (moved from / to /api to avoid shadowing static index.html)
+app.get('/api', (req, res) => {
     res.json({
         name: packageJson.name,
         version: packageJson.version,
