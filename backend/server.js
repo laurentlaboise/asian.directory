@@ -1253,6 +1253,234 @@ app.get('/api/crm/communications/:businessId', authenticateToken, async (req, re
     }
 });
 
+// ==================== CRM ACTIVITIES ====================
+// Create an activity
+app.post('/api/crm/activities', authenticateToken, async (req, res) => {
+    try {
+        const activity = await dbOperations.createActivity({
+            ...req.body,
+            user_id: req.user.id
+        });
+        res.json({ success: true, data: activity });
+    } catch (e) {
+        console.error('Create activity error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get activities with filters
+app.get('/api/crm/activities', authenticateToken, async (req, res) => {
+    try {
+        const filters = {
+            business_id: req.query.business_id ? parseInt(req.query.business_id) : null,
+            user_id: req.query.user_id ? parseInt(req.query.user_id) : null,
+            type: req.query.type || null,
+            pending: req.query.pending === 'true',
+            overdue: req.query.overdue === 'true',
+            limit: req.query.limit ? parseInt(req.query.limit) : 100
+        };
+        // Remove null filters
+        Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === false) delete filters[k]; });
+        const activities = await dbOperations.getActivities(filters);
+        res.json({ success: true, data: activities });
+    } catch (e) {
+        console.error('Get activities error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Complete an activity
+app.patch('/api/crm/activities/:id/complete', authenticateToken, async (req, res) => {
+    try {
+        const activity = await dbOperations.completeActivity(parseInt(req.params.id));
+        if (!activity) return res.status(404).json({ success: false, error: 'Activity not found' });
+        res.json({ success: true, data: activity });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Delete an activity
+app.delete('/api/crm/activities/:id', authenticateToken, async (req, res) => {
+    try {
+        const deleted = await dbOperations.deleteActivity(parseInt(req.params.id));
+        res.json({ success: deleted, message: deleted ? 'Activity deleted' : 'Activity not found' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Activity stats
+app.get('/api/crm/activities/stats', authenticateToken, async (req, res) => {
+    try {
+        const stats = await dbOperations.getActivityStats();
+        res.json({ success: true, data: stats });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==================== CRM AUTOMATION RULES ====================
+// Create automation rule
+app.post('/api/crm/automations', authenticateToken, async (req, res) => {
+    try {
+        const rule = await dbOperations.createAutomationRule({
+            ...req.body,
+            created_by: req.user.id
+        });
+        res.json({ success: true, data: rule });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get all automation rules
+app.get('/api/crm/automations', authenticateToken, async (req, res) => {
+    try {
+        const rules = await dbOperations.getAutomationRules();
+        res.json({ success: true, data: rules });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Update automation rule
+app.put('/api/crm/automations/:id', authenticateToken, async (req, res) => {
+    try {
+        const rule = await dbOperations.updateAutomationRule(parseInt(req.params.id), req.body);
+        if (!rule) return res.status(404).json({ success: false, error: 'Rule not found' });
+        res.json({ success: true, data: rule });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Toggle automation rule active/inactive
+app.patch('/api/crm/automations/:id/toggle', authenticateToken, async (req, res) => {
+    try {
+        const rule = await dbOperations.toggleAutomationRule(parseInt(req.params.id), req.body.is_active);
+        if (!rule) return res.status(404).json({ success: false, error: 'Rule not found' });
+        res.json({ success: true, data: rule });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Delete automation rule
+app.delete('/api/crm/automations/:id', authenticateToken, async (req, res) => {
+    try {
+        const deleted = await dbOperations.deleteAutomationRule(parseInt(req.params.id));
+        res.json({ success: deleted, message: deleted ? 'Rule deleted' : 'Rule not found' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get automation execution log
+app.get('/api/crm/automations/log', authenticateToken, async (req, res) => {
+    try {
+        const ruleId = req.query.rule_id ? parseInt(req.query.rule_id) : null;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 50;
+        const log = await dbOperations.getAutomationLog(ruleId, limit);
+        res.json({ success: true, data: log });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==================== CRM PREDICTIVE / WIN SCORES ====================
+// Calculate win score for a business
+app.post('/api/crm/win-score/:businessId', authenticateToken, async (req, res) => {
+    try {
+        const score = await dbOperations.calculateWinScore(parseInt(req.params.businessId));
+        if (!score) return res.status(404).json({ success: false, error: 'Business not found' });
+        res.json({ success: true, data: score });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get win scores (all or for specific business)
+app.get('/api/crm/win-scores', authenticateToken, async (req, res) => {
+    try {
+        const businessId = req.query.business_id ? parseInt(req.query.business_id) : null;
+        const scores = await dbOperations.getWinScores(businessId);
+        res.json({ success: true, data: scores });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==================== CRM TERRITORIES ====================
+app.post('/api/crm/territories', authenticateToken, async (req, res) => {
+    try {
+        const territory = await dbOperations.createTerritory(req.body);
+        res.json({ success: true, data: territory });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/crm/territories', authenticateToken, async (req, res) => {
+    try {
+        const territories = await dbOperations.getTerritories();
+        res.json({ success: true, data: territories });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.put('/api/crm/territories/:id', authenticateToken, async (req, res) => {
+    try {
+        const territory = await dbOperations.updateTerritory(parseInt(req.params.id), req.body);
+        if (!territory) return res.status(404).json({ success: false, error: 'Territory not found' });
+        res.json({ success: true, data: territory });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/crm/territories/:id', authenticateToken, async (req, res) => {
+    try {
+        const deleted = await dbOperations.deleteTerritory(parseInt(req.params.id));
+        res.json({ success: deleted, message: deleted ? 'Deleted' : 'Not found' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==================== CRM STAGNATION & FORECAST ====================
+// Get stagnant deals
+app.get('/api/crm/stagnant', authenticateToken, async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 7;
+        const deals = await dbOperations.getStagnantDeals(days);
+        res.json({ success: true, data: deals });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get pipeline forecast
+app.get('/api/crm/forecast', authenticateToken, async (req, res) => {
+    try {
+        const forecast = await dbOperations.getPipelineForecast();
+        res.json({ success: true, data: forecast });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Enhanced CRM dashboard stats
+app.get('/api/crm/dashboard/advanced', authenticateToken, async (req, res) => {
+    try {
+        const stats = await dbOperations.getCrmDashboardStats();
+        res.json({ success: true, data: stats });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // ===========================================================================================
 //  USER MANAGEMENT ROUTES (admin only)
 // ===========================================================================================
