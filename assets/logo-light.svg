@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80" fill="none">
+  <!-- Light variant: white text + yellow accent, for dark backgrounds -->
+
+  <!-- Location Pin -->
+  <g transform="translate(4, 4)">
+    <!-- Pin outer shape - yellow -->
+    <path d="M30 4C15.64 4 4 15.64 4 30c0 18.78 23.38 41.28 24.38 42.28a2.24 2.24 0 0 0 3.24 0C32.62 71.28 56 48.78 56 30 56 15.64 44.36 4 30 4z" fill="#FACC15"/>
+
+    <!-- Torii gate motif inside pin - dark on yellow -->
+    <g fill="#111827">
+      <!-- Torii top beam (kasagi) -->
+      <rect x="16" y="18" width="28" height="3.5" rx="1"/>
+      <!-- Torii secondary beam (nuki) -->
+      <rect x="18" y="24" width="24" height="2.5" rx="0.5"/>
+      <!-- Left pillar -->
+      <rect x="20" y="18" width="3" height="26" rx="0.5"/>
+      <!-- Right pillar -->
+      <rect x="37" y="18" width="3" height="26" rx="0.5"/>
+      <!-- Pillar bases -->
+      <rect x="18.5" y="42" width="6" height="2" rx="0.5"/>
+      <rect x="35.5" y="42" width="6" height="2" rx="0.5"/>
+    </g>
+  </g>
+
+  <!-- Text: "asian" in regular weight - white -->
+  <text x="72" y="53" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="36" font-weight="400" fill="#F9FAFB" letter-spacing="-0.5">asian</text>
+
+  <!-- Text: ".directory" in bold - white -->
+  <text x="158" y="53" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="36" font-weight="700" fill="#F9FAFB" letter-spacing="-0.5">.directory</text>
+</svg>

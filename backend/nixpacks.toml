@@ -3,13 +3,13 @@
 
 # Define the providers/packages to use
 [phases.setup]
-nixPkgs = ['nodejs_18', 'npm-9_x']
+nixPkgs = ['nodejs_18', 'npm-9_x', 'python311']
 
 # Install dependencies
 [phases.install]
 cmds = ['npm ci']
 
-# Build phase (not needed for this project, but defined for clarity)
+# Build phase
 [phases.build]
 cmds = []
 

@@ -1,13 +1,13 @@
 {
   "name": "asian-directory-backend",
-  "version": "1.0.0",
-  "description": "Backend API for asian.directory with database support",
+  "version": "2.0.0",
+  "description": "Backend API and CRM for asian.directory - AI-powered business directory for Asia",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["api", "database", "express"],
+  "keywords": ["api", "database", "express", "crm", "directory", "asia"],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -16,6 +16,9 @@
     "better-sqlite3": "^11.7.0",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "cookie-parser": "^1.4.6"
   }
 }
