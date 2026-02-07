@@ -211,6 +211,80 @@ async function initDatabase() {
             )
         `);
 
+        // CRM Activities – activity tracking for deals/leads
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS crm_activities (
+                id SERIAL PRIMARY KEY,
+                business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                type TEXT NOT NULL DEFAULT 'note',
+                title TEXT NOT NULL,
+                description TEXT,
+                due_date TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                priority TEXT DEFAULT 'medium',
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
+        // CRM Automation Rules – IFTTT-style automation rules
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS crm_automation_rules (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                trigger_type TEXT NOT NULL,
+                trigger_config JSONB NOT NULL DEFAULT '{}',
+                action_type TEXT NOT NULL,
+                action_config JSONB NOT NULL DEFAULT '{}',
+                is_active BOOLEAN DEFAULT true,
+                run_count INTEGER DEFAULT 0,
+                last_run_at TIMESTAMPTZ,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
+        // CRM Automation Log – automation execution history
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS crm_automation_log (
+                id SERIAL PRIMARY KEY,
+                rule_id INTEGER NOT NULL REFERENCES crm_automation_rules(id) ON DELETE CASCADE,
+                business_id INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+                trigger_data JSONB,
+                action_result JSONB,
+                status TEXT NOT NULL DEFAULT 'success',
+                error_message TEXT,
+                executed_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
+        // CRM Win Scores – predictive win scoring history
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS crm_win_scores (
+                id SERIAL PRIMARY KEY,
+                business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                score INTEGER NOT NULL DEFAULT 50,
+                factors JSONB NOT NULL DEFAULT '{}',
+                calculated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
+        // CRM Territories – territory/region management
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS crm_territories (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                countries JSONB DEFAULT '[]',
+                assigned_users JSONB DEFAULT '[]',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
         // Indexes for performance
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(status)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category)`);
@@ -224,6 +298,13 @@ async function initDatabase() {
         await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_activities_business ON crm_activities(business_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_activities_user ON crm_activities(user_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_activities_due ON crm_activities(due_date) WHERE completed_at IS NULL`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_activities_type ON crm_activities(type)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_automation_log_rule ON crm_automation_log(rule_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_automation_log_executed ON crm_automation_log(executed_at)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_win_scores_business ON crm_win_scores(business_id)`);
 
         await client.query('COMMIT');
         console.log('PostgreSQL tables and indexes created successfully');
@@ -795,6 +876,266 @@ const dbOperations = {
             return headers.join(',') + '\n' + rows.join('\n');
         }
         return businesses;
+    },
+
+    // ==================== CRM ADVANCED OPERATIONS ====================
+
+    // --- Activities ---
+    createActivity: async (activity) => {
+        const result = await pool.query(`
+            INSERT INTO crm_activities (business_id, user_id, type, title, description, due_date, priority, metadata)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+        `, [activity.business_id, activity.user_id, activity.type || 'note', activity.title,
+            activity.description || null, activity.due_date || null, activity.priority || 'medium',
+            JSON.stringify(activity.metadata || {})]);
+        return result.rows[0];
+    },
+
+    getActivities: async (filters = {}) => {
+        let sql = 'SELECT a.*, u.username, u.display_name, b.name as business_name FROM crm_activities a LEFT JOIN users u ON a.user_id = u.id LEFT JOIN businesses b ON a.business_id = b.id WHERE 1=1';
+        const params = [];
+        let idx = 1;
+        if (filters.business_id) { sql += ` AND a.business_id = $${idx++}`; params.push(filters.business_id); }
+        if (filters.user_id) { sql += ` AND a.user_id = $${idx++}`; params.push(filters.user_id); }
+        if (filters.type) { sql += ` AND a.type = $${idx++}`; params.push(filters.type); }
+        if (filters.pending) { sql += ' AND a.completed_at IS NULL'; }
+        if (filters.overdue) { sql += ' AND a.due_date < NOW() AND a.completed_at IS NULL'; }
+        sql += ' ORDER BY COALESCE(a.due_date, a.created_at) ASC';
+        if (filters.limit) { sql += ` LIMIT $${idx++}`; params.push(filters.limit); }
+        const result = await pool.query(sql, params);
+        return result.rows;
+    },
+
+    completeActivity: async (id) => {
+        const result = await pool.query('UPDATE crm_activities SET completed_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *', [id]);
+        return result.rows[0] || null;
+    },
+
+    deleteActivity: async (id) => {
+        const result = await pool.query('DELETE FROM crm_activities WHERE id = $1', [id]);
+        return result.rowCount > 0;
+    },
+
+    getActivityStats: async () => {
+        const total = (await pool.query('SELECT COUNT(*)::int as count FROM crm_activities')).rows[0].count;
+        const pending = (await pool.query('SELECT COUNT(*)::int as count FROM crm_activities WHERE completed_at IS NULL')).rows[0].count;
+        const overdue = (await pool.query('SELECT COUNT(*)::int as count FROM crm_activities WHERE due_date < NOW() AND completed_at IS NULL')).rows[0].count;
+        const completedToday = (await pool.query("SELECT COUNT(*)::int as count FROM crm_activities WHERE completed_at >= CURRENT_DATE")).rows[0].count;
+        const byType = (await pool.query('SELECT type, COUNT(*)::int as count FROM crm_activities GROUP BY type ORDER BY count DESC')).rows;
+        return { total, pending, overdue, completedToday, byType };
+    },
+
+    // --- Automation Rules ---
+    createAutomationRule: async (rule) => {
+        const result = await pool.query(`
+            INSERT INTO crm_automation_rules (name, description, trigger_type, trigger_config, action_type, action_config, is_active, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+        `, [rule.name, rule.description || null, rule.trigger_type, JSON.stringify(rule.trigger_config || {}),
+            rule.action_type, JSON.stringify(rule.action_config || {}), rule.is_active !== false, rule.created_by || null]);
+        return result.rows[0];
+    },
+
+    getAutomationRules: async () => {
+        const result = await pool.query('SELECT r.*, u.username as created_by_name FROM crm_automation_rules r LEFT JOIN users u ON r.created_by = u.id ORDER BY r.created_at DESC');
+        return result.rows;
+    },
+
+    updateAutomationRule: async (id, updates) => {
+        const result = await pool.query(`
+            UPDATE crm_automation_rules SET name = COALESCE($1, name), description = COALESCE($2, description),
+            trigger_type = COALESCE($3, trigger_type), trigger_config = COALESCE($4, trigger_config),
+            action_type = COALESCE($5, action_type), action_config = COALESCE($6, action_config),
+            is_active = COALESCE($7, is_active), updated_at = NOW() WHERE id = $8 RETURNING *
+        `, [updates.name, updates.description, updates.trigger_type,
+            updates.trigger_config ? JSON.stringify(updates.trigger_config) : null,
+            updates.action_type, updates.action_config ? JSON.stringify(updates.action_config) : null,
+            updates.is_active, id]);
+        return result.rows[0] || null;
+    },
+
+    toggleAutomationRule: async (id, isActive) => {
+        const result = await pool.query('UPDATE crm_automation_rules SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING *', [isActive, id]);
+        return result.rows[0] || null;
+    },
+
+    deleteAutomationRule: async (id) => {
+        const result = await pool.query('DELETE FROM crm_automation_rules WHERE id = $1', [id]);
+        return result.rowCount > 0;
+    },
+
+    logAutomationExecution: async (ruleId, businessId, triggerData, actionResult, status, errorMessage) => {
+        await pool.query(`INSERT INTO crm_automation_log (rule_id, business_id, trigger_data, action_result, status, error_message) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [ruleId, businessId, JSON.stringify(triggerData || {}), JSON.stringify(actionResult || {}), status, errorMessage || null]);
+        await pool.query('UPDATE crm_automation_rules SET run_count = run_count + 1, last_run_at = NOW() WHERE id = $1', [ruleId]);
+    },
+
+    getAutomationLog: async (ruleId = null, limit = 50) => {
+        let sql = 'SELECT l.*, r.name as rule_name, b.name as business_name FROM crm_automation_log l LEFT JOIN crm_automation_rules r ON l.rule_id = r.id LEFT JOIN businesses b ON l.business_id = b.id';
+        const params = [];
+        let idx = 1;
+        if (ruleId) { sql += ` WHERE l.rule_id = $${idx++}`; params.push(ruleId); }
+        sql += ` ORDER BY l.executed_at DESC LIMIT $${idx++}`;
+        params.push(limit);
+        return (await pool.query(sql, params)).rows;
+    },
+
+    // --- Win Scores (Predictive) ---
+    calculateWinScore: async (businessId) => {
+        // Get business data
+        const biz = (await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId])).rows[0];
+        if (!biz) return null;
+
+        // Get activity count and recency
+        const activityData = (await pool.query(`
+            SELECT COUNT(*)::int as total_activities,
+                   COUNT(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN 1 END)::int as recent_activities,
+                   MAX(created_at) as last_activity
+            FROM crm_activities WHERE business_id = $1
+        `, [businessId])).rows[0];
+
+        // Get communication count
+        const commData = (await pool.query('SELECT COUNT(*)::int as count FROM communications WHERE business_id = $1', [businessId])).rows[0];
+
+        // Calculate score based on factors
+        let score = 50; // base score
+        const factors = {};
+
+        // Pipeline stage factor (+/- 20)
+        const stageScores = { new_lead: -10, contacted: 0, in_review: 10, verified: 15, active_listing: 20, inactive: -20 };
+        const stageFactor = stageScores[biz.pipeline_stage] || 0;
+        score += stageFactor;
+        factors.pipeline_stage = { value: biz.pipeline_stage, impact: stageFactor };
+
+        // Activity recency factor (+/- 15)
+        const activityFactor = activityData.recent_activities > 3 ? 15 : activityData.recent_activities > 0 ? 5 : -10;
+        score += activityFactor;
+        factors.recent_activity = { value: activityData.recent_activities, impact: activityFactor };
+
+        // Communication factor (+/- 10)
+        const commFactor = commData.count > 5 ? 10 : commData.count > 0 ? 5 : -5;
+        score += commFactor;
+        factors.communications = { value: commData.count, impact: commFactor };
+
+        // Data completeness factor (+/- 10)
+        const fields = [biz.email, biz.phone, biz.website, biz.contact_person, biz.country];
+        const completeness = fields.filter(f => f).length / fields.length;
+        const completenessFactor = Math.round((completeness - 0.5) * 20);
+        score += completenessFactor;
+        factors.data_completeness = { value: Math.round(completeness * 100) + '%', impact: completenessFactor };
+
+        // Priority factor (+/- 5)
+        const priorityFactor = biz.priority === 'high' ? 5 : biz.priority === 'low' ? -5 : 0;
+        score += priorityFactor;
+        factors.priority = { value: biz.priority, impact: priorityFactor };
+
+        // Clamp to 0-100
+        score = Math.max(0, Math.min(100, score));
+
+        // Save score
+        await pool.query('INSERT INTO crm_win_scores (business_id, score, factors) VALUES ($1, $2, $3)', [businessId, score, JSON.stringify(factors)]);
+
+        return { score, factors, calculated_at: new Date().toISOString() };
+    },
+
+    getWinScores: async (businessId = null) => {
+        if (businessId) {
+            const result = await pool.query('SELECT * FROM crm_win_scores WHERE business_id = $1 ORDER BY calculated_at DESC LIMIT 1', [businessId]);
+            return result.rows[0] || null;
+        }
+        // Get latest score per business
+        const result = await pool.query(`
+            SELECT DISTINCT ON (ws.business_id) ws.*, b.name as business_name, b.pipeline_stage, b.priority
+            FROM crm_win_scores ws JOIN businesses b ON ws.business_id = b.id
+            ORDER BY ws.business_id, ws.calculated_at DESC
+        `);
+        return result.rows;
+    },
+
+    // --- Territories ---
+    createTerritory: async (territory) => {
+        const result = await pool.query(`
+            INSERT INTO crm_territories (name, description, countries, assigned_users)
+            VALUES ($1,$2,$3,$4) RETURNING *
+        `, [territory.name, territory.description || null, JSON.stringify(territory.countries || []), JSON.stringify(territory.assigned_users || [])]);
+        return result.rows[0];
+    },
+
+    getTerritories: async () => {
+        return (await pool.query('SELECT * FROM crm_territories ORDER BY name')).rows;
+    },
+
+    updateTerritory: async (id, updates) => {
+        const result = await pool.query(`
+            UPDATE crm_territories SET name = COALESCE($1, name), description = COALESCE($2, description),
+            countries = COALESCE($3, countries), assigned_users = COALESCE($4, assigned_users) WHERE id = $5 RETURNING *
+        `, [updates.name, updates.description, updates.countries ? JSON.stringify(updates.countries) : null,
+            updates.assigned_users ? JSON.stringify(updates.assigned_users) : null, id]);
+        return result.rows[0] || null;
+    },
+
+    deleteTerritory: async (id) => {
+        const result = await pool.query('DELETE FROM crm_territories WHERE id = $1', [id]);
+        return result.rowCount > 0;
+    },
+
+    // --- Stagnation Detection ---
+    getStagnantDeals: async (thresholdDays = 7) => {
+        const result = await pool.query(`
+            SELECT b.*,
+                EXTRACT(DAY FROM NOW() - b.updated_at)::int as days_stagnant,
+                (SELECT MAX(a.created_at) FROM crm_activities a WHERE a.business_id = b.id) as last_activity_date,
+                (SELECT COUNT(*)::int FROM crm_activities a WHERE a.business_id = b.id AND a.completed_at IS NULL) as pending_activities
+            FROM businesses b
+            WHERE b.status != 'inactive'
+            AND b.pipeline_stage NOT IN ('active_listing', 'inactive')
+            AND b.updated_at < NOW() - make_interval(days => $1)
+            ORDER BY b.updated_at ASC
+        `, [thresholdDays]);
+        return result.rows.map(parseBusiness);
+    },
+
+    // --- Pipeline Forecast ---
+    getPipelineForecast: async () => {
+        // Get pipeline distribution with win scores
+        const pipeline = (await pool.query(`
+            SELECT b.pipeline_stage, COUNT(*)::int as count,
+                COALESCE(AVG(ws.score), 50)::int as avg_score
+            FROM businesses b
+            LEFT JOIN LATERAL (
+                SELECT score FROM crm_win_scores WHERE business_id = b.id ORDER BY calculated_at DESC LIMIT 1
+            ) ws ON true
+            WHERE b.status != 'inactive'
+            GROUP BY b.pipeline_stage
+        `)).rows;
+
+        // Stage conversion rates (how many moved forward in last 30 days)
+        const stageOrder = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing'];
+
+        // Activity velocity
+        const velocity = (await pool.query(`
+            SELECT
+                COUNT(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN 1 END)::int as this_week,
+                COUNT(CASE WHEN created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days' THEN 1 END)::int as last_week
+            FROM crm_activities
+        `)).rows[0];
+
+        return { pipeline, velocity, stageOrder };
+    },
+
+    // --- Enhanced Dashboard Stats ---
+    getCrmDashboardStats: async () => {
+        const activityStats = await dbOperations.getActivityStats();
+        const stagnantDeals = await dbOperations.getStagnantDeals(7);
+        const forecast = await dbOperations.getPipelineForecast();
+        const automationRules = (await pool.query('SELECT COUNT(*)::int as total, COUNT(CASE WHEN is_active THEN 1 END)::int as active FROM crm_automation_rules')).rows[0];
+        const recentAutomations = (await pool.query("SELECT COUNT(*)::int as count FROM crm_automation_log WHERE executed_at >= NOW() - INTERVAL '24 hours'")).rows[0].count;
+
+        return {
+            activities: activityStats,
+            stagnant: { count: stagnantDeals.length, deals: stagnantDeals.slice(0, 10) },
+            forecast,
+            automations: { ...automationRules, recentExecutions: recentAutomations }
+        };
     }
 };
 

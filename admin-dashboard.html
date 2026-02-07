@@ -47,6 +47,16 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #9CA3AF; border-radius: 3px; }
         .dark ::-webkit-scrollbar-thumb { background: #4B5563; }
+        .stagnant-pulse { animation: stagnantPulse 2s infinite; }
+        @keyframes stagnantPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+        .score-ring { position:relative; width:40px; height:40px; }
+        .score-ring svg { transform: rotate(-90deg); }
+        .score-ring .score-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+        .activity-timeline::before { content:''; position:absolute; left:15px; top:0; bottom:0; width:2px; background:#E5E7EB; }
+        .dark .activity-timeline::before { background:#374151; }
+        .view-toggle .active { background:#FACC15; color:#111827; }
+        .automation-card { transition: all 0.2s; }
+        .automation-card:hover { border-color: #FACC15; }
         @media (max-width: 768px) { .sidebar { transform: translateX(-100%); } .sidebar.open { transform: translateX(0); } }
     </style>
 </head>
@@ -79,6 +89,19 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
                 API Keys
             </a>
+            <a href="#" data-page="activities" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+                Activities
+            </a>
+            <a href="#" data-page="automations" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                Automations
+            </a>
+            <a href="#" data-page="intelligence" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                Intelligence
+            </a>
+            <p class="px-4 mt-4 mb-2 text-[10px] uppercase font-semibold text-gray-400 tracking-wider">System</p>
             <a href="#" data-page="analytics" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                 Analytics
@@ -282,6 +305,9 @@ async function renderPage(page) {
         case 'dashboard': await renderDashboard(main); break;
         case 'businesses': await renderBusinesses(main); break;
         case 'pipeline': await renderPipeline(main); break;
+        case 'activities': await renderActivities(main); break;
+        case 'automations': await renderAutomations(main); break;
+        case 'intelligence': await renderIntelligence(main); break;
         case 'users': await renderUsers(main); break;
         case 'apikeys': await renderApiKeys(main); break;
         case 'analytics': await renderAnalytics(main); break;
@@ -427,39 +453,122 @@ function renderBusinessTable() {
         `).join('');
 }
 
-// --- PIPELINE (Kanban) ---
+// --- WIN SCORE RING HELPER ---
+function scoreRing(score) {
+    const color = score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444';
+    const circ = 2 * Math.PI * 16;
+    const offset = circ - (score / 100) * circ;
+    return `<div class="score-ring"><svg width="40" height="40"><circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" class="text-gray-200 dark:text-gray-600" stroke-width="3"/><circle cx="20" cy="20" r="16" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${circ}" stroke-dashoffset="${offset}" stroke-linecap="round"/></svg><span class="score-text">${score}</span></div>`;
+}
+
+function daysAgo(dateStr) {
+    if (!dateStr) return null;
+    return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
+
+function activityIcon(type) {
+    const icons = {
+        note: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>',
+        call: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>',
+        email: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>',
+        meeting: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>',
+        task: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>',
+        follow_up: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>'
+    };
+    return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icons[type] || icons.note}</svg>`;
+}
+
+// --- PIPELINE (Enhanced Kanban with stagnation & scores) ---
+let pipelineView = 'kanban'; // kanban or list
+
 async function renderPipeline(el) {
-    const res = await api('/crm/pipeline');
-    if (!res?.success) { el.innerHTML = '<p class="text-red-500">Failed to load pipeline</p>'; return; }
+    const [pipeRes, stagnantRes, forecastRes] = await Promise.all([
+        api('/crm/pipeline'),
+        api('/crm/stagnant?days=7').catch(() => ({ success: true, data: [] })),
+        api('/crm/forecast').catch(() => ({ success: true, data: { pipeline: [], velocity: { this_week: 0, last_week: 0 } } }))
+    ]);
+    if (!pipeRes?.success) { el.innerHTML = '<p class="text-red-500">Failed to load pipeline</p>'; return; }
+
+    const stagnantIds = new Set((stagnantRes?.data || []).map(d => d.id));
+    const forecast = forecastRes?.data || { pipeline: [], velocity: { this_week: 0, last_week: 0 } };
+    const velocityTrend = forecast.velocity.this_week >= forecast.velocity.last_week ? 'up' : 'down';
 
     const stages = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive'];
     const colors = { new_lead: 'border-blue-400', contacted: 'border-yellow-400', in_review: 'border-orange-400', verified: 'border-green-400', active_listing: 'border-emerald-400', inactive: 'border-gray-400' };
+    const bgColors = { new_lead: 'bg-blue-400', contacted: 'bg-yellow-400', in_review: 'bg-orange-400', verified: 'bg-green-400', active_listing: 'bg-emerald-400', inactive: 'bg-gray-400' };
+    const totalInPipeline = stages.reduce((sum, s) => sum + (pipeRes.data[s] || []).length, 0);
 
     el.innerHTML = `
-        <div class="flex gap-4 overflow-x-auto pb-4" style="min-height:500px">
-            ${stages.map(stage => `
+        <!-- Forecast Bar -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500 dark:text-gray-400">In Pipeline</div>
+                <div class="text-2xl font-bold mt-1">${totalInPipeline}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500 dark:text-gray-400">Stagnant Deals</div>
+                <div class="text-2xl font-bold mt-1 ${stagnantIds.size > 0 ? 'text-red-500' : 'text-green-500'}">${stagnantIds.size}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500 dark:text-gray-400">Activity This Week</div>
+                <div class="text-2xl font-bold mt-1 flex items-center gap-1">${forecast.velocity.this_week}
+                    <span class="text-xs ${velocityTrend === 'up' ? 'text-green-500' : 'text-red-500'}">${velocityTrend === 'up' ? '&#9650;' : '&#9660;'}</span>
+                </div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500 dark:text-gray-400">Weighted Forecast</div>
+                <div class="text-2xl font-bold mt-1">${forecast.pipeline.reduce((s, p) => s + (p.count * (p.avg_score || 50) / 100), 0).toFixed(0)}</div>
+            </div>
+        </div>
+        <!-- Stage Progress Bar -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 mb-4">
+            <div class="flex rounded-full overflow-hidden h-3">
+                ${stages.filter(s => s !== 'inactive').map(s => {
+                    const count = (pipeRes.data[s] || []).length;
+                    const pct = totalInPipeline > 0 ? (count / totalInPipeline * 100) : 0;
+                    return pct > 0 ? `<div class="${bgColors[s]} opacity-80" style="width:${pct}%" title="${stageLabel(s)}: ${count}"></div>` : '';
+                }).join('')}
+            </div>
+            <div class="flex justify-between mt-2 text-[10px] text-gray-500">${stages.filter(s => s !== 'inactive').map(s => `<span>${stageLabel(s)}</span>`).join('')}</div>
+        </div>
+        <!-- Kanban Board -->
+        <div class="flex gap-3 overflow-x-auto pb-4" style="min-height:500px">
+            ${stages.map(stage => {
+                const items = pipeRes.data[stage] || [];
+                return `
                 <div class="pipeline-col flex-shrink-0 w-64 bg-gray-100 dark:bg-gray-800 rounded-xl p-3 border-t-4 ${colors[stage]}" data-stage="${stage}"
                      ondragover="event.preventDefault();this.classList.add('drag-over')"
                      ondragleave="this.classList.remove('drag-over')"
                      ondrop="handleDrop(event,'${stage}');this.classList.remove('drag-over')">
                     <h3 class="font-semibold text-sm mb-3 flex justify-between items-center">
                         ${stageLabel(stage)}
-                        <span class="text-xs bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full">${(res.data[stage] || []).length}</span>
+                        <span class="text-xs bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full">${items.length}</span>
                     </h3>
                     <div class="space-y-2">
-                        ${(res.data[stage] || []).map(b => `
-                            <div class="pipeline-card bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer border border-gray-200 dark:border-gray-600 hover:shadow-md"
+                        ${items.map(b => {
+                            const isStagnant = stagnantIds.has(b.id);
+                            const daysSinceUpdate = daysAgo(b.updated_at);
+                            return `
+                            <div class="pipeline-card bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer border ${isStagnant ? 'border-red-300 dark:border-red-700 stagnant-pulse' : 'border-gray-200 dark:border-gray-600'} hover:shadow-md"
                                  draggable="true" data-id="${b.id}"
                                  ondragstart="event.dataTransfer.setData('text/plain','${b.id}')"
                                  onclick="openEditBusiness(${b.id})">
-                                <div class="font-medium text-sm">${b.name}</div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${b.category} ${b.country ? '- ' + b.country : ''}</div>
-                                <div class="mt-2">${badge(b.priority, 'priority')}</div>
-                            </div>
-                        `).join('')}
+                                <div class="flex justify-between items-start">
+                                    <div class="font-medium text-sm flex-1">${b.name}</div>
+                                    ${isStagnant ? '<span class="text-[10px] bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 px-1.5 py-0.5 rounded-full ml-1 whitespace-nowrap">' + daysSinceUpdate + 'd</span>' : ''}
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${b.category}${b.country ? ' - ' + b.country : ''}</div>
+                                <div class="flex items-center justify-between mt-2">
+                                    ${badge(b.priority, 'priority')}
+                                    <button class="text-xs text-yellow-500 hover:text-yellow-600" onclick="event.stopPropagation();quickActivity(${b.id},'${b.name}')" title="Log activity">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                    </button>
+                                </div>
+                            </div>`;
+                        }).join('')}
                     </div>
-                </div>
-            `).join('')}
+                </div>`;
+            }).join('')}
         </div>
     `;
 }
@@ -476,6 +585,472 @@ async function handleDrop(event, newStage) {
     } else {
         toast(res?.error || 'Failed to update', 'error');
     }
+}
+
+// --- ACTIVITIES ---
+async function renderActivities(el) {
+    const [activitiesRes, statsRes, bizRes] = await Promise.all([
+        api('/crm/activities?limit=100'),
+        api('/crm/activities/stats'),
+        api('/businesses')
+    ]);
+    const activities = activitiesRes?.data || [];
+    const stats = statsRes?.data || {};
+    const businesses = bizRes?.data || [];
+
+    el.innerHTML = `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-2xl font-bold">${stats.total || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">Total Activities</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-2xl font-bold text-yellow-500">${stats.pending || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">Pending</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-2xl font-bold text-red-500">${stats.overdue || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">Overdue</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-2xl font-bold text-green-500">${stats.completedToday || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">Completed Today</div>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-3 mb-4 items-center">
+            <select id="act-filter-type" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <option value="">All Types</option>
+                <option value="note">Note</option><option value="call">Call</option><option value="email">Email</option>
+                <option value="meeting">Meeting</option><option value="task">Task</option><option value="follow_up">Follow Up</option>
+            </select>
+            <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="act-filter-pending"> Pending only</label>
+            <div class="flex-1"></div>
+            <button onclick="openActivityForm()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">+ Log Activity</button>
+        </div>
+        <div id="activity-list" class="space-y-2"></div>
+        <div id="activity-form-panel" class="hidden bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700 mb-4">
+            <h3 class="font-semibold mb-3">New Activity</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <select id="act-business" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                    <option value="">Select Business *</option>
+                    ${businesses.map(b => `<option value="${b.id}">${b.name}</option>`).join('')}
+                </select>
+                <select id="act-type" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                    <option value="note">Note</option><option value="call">Call</option><option value="email">Email</option>
+                    <option value="meeting">Meeting</option><option value="task">Task</option><option value="follow_up">Follow Up</option>
+                </select>
+                <input id="act-title" placeholder="Title *" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <input id="act-due" type="datetime-local" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <textarea id="act-desc" placeholder="Description" rows="2" class="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"></textarea>
+                <select id="act-priority" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                    <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option>
+                </select>
+                <div class="flex gap-2">
+                    <button onclick="saveActivity()" class="flex-1 px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 text-sm font-medium">Save</button>
+                    <button onclick="closeActivityForm()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    renderActivityList(activities);
+
+    document.getElementById('act-filter-type').addEventListener('change', () => filterActivities(activities));
+    document.getElementById('act-filter-pending').addEventListener('change', () => filterActivities(activities));
+}
+
+function filterActivities(activities) {
+    const type = document.getElementById('act-filter-type')?.value || '';
+    const pendingOnly = document.getElementById('act-filter-pending')?.checked || false;
+    let filtered = activities;
+    if (type) filtered = filtered.filter(a => a.type === type);
+    if (pendingOnly) filtered = filtered.filter(a => !a.completed_at);
+    renderActivityList(filtered);
+}
+
+function renderActivityList(activities) {
+    const el = document.getElementById('activity-list');
+    if (!el) return;
+    if (activities.length === 0) {
+        el.innerHTML = '<div class="text-center text-gray-400 py-8">No activities found</div>';
+        return;
+    }
+    el.innerHTML = `<div class="relative activity-timeline pl-8 space-y-3">${activities.map(a => {
+        const isOverdue = a.due_date && !a.completed_at && new Date(a.due_date) < new Date();
+        const isDone = !!a.completed_at;
+        return `
+        <div class="relative bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border ${isOverdue ? 'border-red-300 dark:border-red-700' : isDone ? 'border-green-200 dark:border-green-800' : 'border-gray-200 dark:border-gray-700'}">
+            <div class="absolute -left-8 top-4 w-6 h-6 rounded-full ${isDone ? 'bg-green-100 dark:bg-green-900 text-green-600' : isOverdue ? 'bg-red-100 dark:bg-red-900 text-red-600' : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600'} flex items-center justify-center">
+                ${activityIcon(a.type)}
+            </div>
+            <div class="flex items-start justify-between">
+                <div>
+                    <div class="font-medium text-sm ${isDone ? 'line-through text-gray-400' : ''}">${a.title}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">${a.business_name || 'Unknown'} &middot; ${a.type} &middot; ${a.display_name || a.username || ''}</div>
+                    ${a.description ? `<div class="text-xs text-gray-400 mt-1">${a.description}</div>` : ''}
+                    ${a.due_date ? `<div class="text-xs mt-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}">Due: ${formatDate(a.due_date)}</div>` : ''}
+                </div>
+                <div class="flex gap-2 ml-3 flex-shrink-0">
+                    ${!isDone ? `<button onclick="completeActivity(${a.id})" class="text-xs px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded hover:bg-green-200" title="Complete">&#10003;</button>` : ''}
+                    <button onclick="deleteActivity(${a.id})" class="text-xs px-2 py-1 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded hover:bg-red-200" title="Delete">&#10005;</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function openActivityForm(businessId, businessName) {
+    const panel = document.getElementById('activity-form-panel');
+    if (panel) {
+        panel.classList.remove('hidden');
+        if (businessId) {
+            const sel = document.getElementById('act-business');
+            if (sel) sel.value = businessId;
+        }
+        document.getElementById('act-title')?.focus();
+    }
+}
+
+function closeActivityForm() {
+    document.getElementById('activity-form-panel')?.classList.add('hidden');
+}
+
+async function saveActivity() {
+    const businessId = document.getElementById('act-business')?.value;
+    const title = document.getElementById('act-title')?.value?.trim();
+    if (!businessId || !title) { toast('Business and title are required', 'error'); return; }
+
+    const body = {
+        business_id: parseInt(businessId),
+        type: document.getElementById('act-type')?.value || 'note',
+        title,
+        description: document.getElementById('act-desc')?.value || null,
+        due_date: document.getElementById('act-due')?.value || null,
+        priority: document.getElementById('act-priority')?.value || 'medium'
+    };
+
+    const res = await api('/crm/activities', { method: 'POST', body });
+    if (res?.success) {
+        toast('Activity logged');
+        closeActivityForm();
+        renderActivities(document.getElementById('main-content'));
+    } else toast(res?.error || 'Failed to save activity', 'error');
+}
+
+async function completeActivity(id) {
+    const res = await api(`/crm/activities/${id}/complete`, { method: 'PATCH' });
+    if (res?.success) { toast('Activity completed'); renderActivities(document.getElementById('main-content')); }
+    else toast(res?.error || 'Failed', 'error');
+}
+
+async function deleteActivity(id) {
+    if (!confirm('Delete this activity?')) return;
+    const res = await api(`/crm/activities/${id}`, { method: 'DELETE' });
+    if (res?.success) { toast('Activity deleted'); renderActivities(document.getElementById('main-content')); }
+    else toast(res?.error || 'Failed', 'error');
+}
+
+function quickActivity(businessId, businessName) {
+    navigateTo('activities');
+    setTimeout(() => openActivityForm(businessId, businessName), 300);
+}
+
+// --- AUTOMATIONS ---
+async function renderAutomations(el) {
+    const [rulesRes, logRes] = await Promise.all([
+        api('/crm/automations'),
+        api('/crm/automations/log?limit=20')
+    ]);
+    const rules = rulesRes?.data || [];
+    const logs = logRes?.data || [];
+
+    const triggerTypes = ['stage_change', 'stagnation', 'new_lead', 'activity_completed', 'score_threshold'];
+    const actionTypes = ['send_notification', 'create_activity', 'change_stage', 'assign_user', 'update_field'];
+
+    el.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-semibold">Automation Rules</h3>
+                    <button onclick="toggleAutomationBuilder()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">+ New Rule</button>
+                </div>
+                <div id="automation-builder" class="hidden bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700 mb-4">
+                    <h4 class="font-medium mb-3">Rule Builder</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input id="auto-name" placeholder="Rule name *" class="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                        <input id="auto-desc" placeholder="Description" class="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">When (Trigger)</label>
+                            <select id="auto-trigger" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                                ${triggerTypes.map(t => `<option value="${t}">${t.replace(/_/g,' ')}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Then (Action)</label>
+                            <select id="auto-action" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                                ${actionTypes.map(t => `<option value="${t}">${t.replace(/_/g,' ')}</option>`).join('')}
+                            </select>
+                        </div>
+                        <textarea id="auto-trigger-config" placeholder='Trigger config JSON (e.g. {"from_stage":"new_lead","to_stage":"contacted"})' rows="2" class="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs font-mono"></textarea>
+                        <textarea id="auto-action-config" placeholder='Action config JSON (e.g. {"activity_type":"follow_up","title":"Welcome call"})' rows="2" class="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs font-mono"></textarea>
+                        <div class="sm:col-span-2 flex gap-2">
+                            <button onclick="saveAutomation()" class="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 text-sm font-medium">Save Rule</button>
+                            <button onclick="toggleAutomationBuilder()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    ${rules.length === 0 ? '<div class="text-center text-gray-400 py-8">No automation rules yet. Create one to get started.</div>' : rules.map(r => `
+                        <div class="automation-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-3 h-3 rounded-full ${r.is_active ? 'bg-green-400' : 'bg-gray-300'}"></div>
+                                    <div>
+                                        <div class="font-medium text-sm">${r.name}</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">${r.description || ''}</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">${r.run_count || 0} runs</span>
+                                    <button onclick="toggleAutomation(${r.id},${!r.is_active})" class="text-xs px-2 py-1 rounded ${r.is_active ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}" title="${r.is_active ? 'Disable' : 'Enable'}">
+                                        ${r.is_active ? 'On' : 'Off'}
+                                    </button>
+                                    <button onclick="deleteAutomation(${r.id})" class="text-xs px-2 py-1 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded">Del</button>
+                                </div>
+                            </div>
+                            <div class="flex gap-4 mt-3 text-xs">
+                                <div class="flex items-center gap-1 text-gray-500"><span class="font-medium text-gray-600 dark:text-gray-300">IF</span> ${r.trigger_type.replace(/_/g,' ')}</div>
+                                <div class="text-gray-300 dark:text-gray-600">&rarr;</div>
+                                <div class="flex items-center gap-1 text-gray-500"><span class="font-medium text-gray-600 dark:text-gray-300">THEN</span> ${r.action_type.replace(/_/g,' ')}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            <div>
+                <h3 class="font-semibold mb-4">Recent Execution Log</h3>
+                <div class="space-y-2">
+                    ${logs.length === 0 ? '<div class="text-sm text-gray-400">No executions yet</div>' : logs.map(l => `
+                        <div class="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-200 dark:border-gray-700 text-xs">
+                            <div class="flex justify-between items-start">
+                                <span class="font-medium">${l.rule_name || 'Rule #' + l.rule_id}</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] ${l.status === 'success' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'}">${l.status}</span>
+                            </div>
+                            <div class="text-gray-500 mt-1">${l.business_name || ''} &middot; ${formatDate(l.executed_at)}</div>
+                            ${l.error_message ? `<div class="text-red-500 mt-1">${l.error_message}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function toggleAutomationBuilder() {
+    document.getElementById('automation-builder')?.classList.toggle('hidden');
+}
+
+async function saveAutomation() {
+    const name = document.getElementById('auto-name')?.value?.trim();
+    if (!name) { toast('Rule name is required', 'error'); return; }
+
+    let triggerConfig = {}, actionConfig = {};
+    try { triggerConfig = JSON.parse(document.getElementById('auto-trigger-config')?.value || '{}'); } catch(e) { triggerConfig = {}; }
+    try { actionConfig = JSON.parse(document.getElementById('auto-action-config')?.value || '{}'); } catch(e) { actionConfig = {}; }
+
+    const body = {
+        name,
+        description: document.getElementById('auto-desc')?.value || null,
+        trigger_type: document.getElementById('auto-trigger')?.value,
+        trigger_config: triggerConfig,
+        action_type: document.getElementById('auto-action')?.value,
+        action_config: actionConfig
+    };
+
+    const res = await api('/crm/automations', { method: 'POST', body });
+    if (res?.success) {
+        toast('Automation rule created');
+        renderAutomations(document.getElementById('main-content'));
+    } else toast(res?.error || 'Failed', 'error');
+}
+
+async function toggleAutomation(id, isActive) {
+    const res = await api(`/crm/automations/${id}/toggle`, { method: 'PATCH', body: { is_active: isActive } });
+    if (res?.success) { toast(isActive ? 'Rule enabled' : 'Rule disabled'); renderAutomations(document.getElementById('main-content')); }
+    else toast(res?.error || 'Failed', 'error');
+}
+
+async function deleteAutomation(id) {
+    if (!confirm('Delete this automation rule?')) return;
+    const res = await api(`/crm/automations/${id}`, { method: 'DELETE' });
+    if (res?.success) { toast('Rule deleted'); renderAutomations(document.getElementById('main-content')); }
+    else toast(res?.error || 'Failed', 'error');
+}
+
+// --- INTELLIGENCE (Predictive Analytics, Win Scores, Territories) ---
+async function renderIntelligence(el) {
+    const [advRes, scoresRes, territoriesRes, bizRes] = await Promise.all([
+        api('/crm/dashboard/advanced'),
+        api('/crm/win-scores'),
+        api('/crm/territories'),
+        api('/businesses')
+    ]);
+    const adv = advRes?.data || {};
+    const scores = scoresRes?.data || [];
+    const territories = territoriesRes?.data || [];
+    const businesses = bizRes?.data || [];
+
+    el.innerHTML = `
+        <!-- Intelligence Overview -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500">Pending Activities</div>
+                <div class="text-2xl font-bold mt-1">${adv.activities?.pending || 0}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500">Stagnant Deals</div>
+                <div class="text-2xl font-bold mt-1 ${(adv.stagnant?.count || 0) > 0 ? 'text-red-500' : 'text-green-500'}">${adv.stagnant?.count || 0}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500">Active Automations</div>
+                <div class="text-2xl font-bold mt-1">${adv.automations?.active || 0}/${adv.automations?.total || 0}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs text-gray-500">Automations (24h)</div>
+                <div class="text-2xl font-bold mt-1">${adv.automations?.recentExecutions || 0}</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Win Scores -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-semibold">Win Scores</h3>
+                    <button onclick="recalcAllScores()" class="text-xs px-3 py-1.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">Recalculate All</button>
+                </div>
+                ${scores.length === 0 ? '<div class="text-sm text-gray-400 text-center py-4">No win scores calculated yet. Click "Recalculate All" to generate.</div>' : `
+                <div class="space-y-2 max-h-80 overflow-y-auto">
+                    ${scores.map(s => `
+                        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                            ${scoreRing(s.score)}
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium truncate">${s.business_name || 'Business #' + s.business_id}</div>
+                                <div class="text-xs text-gray-500">${stageLabel(s.pipeline_stage)} &middot; ${badge(s.priority, 'priority')}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`}
+            </div>
+
+            <!-- Stagnant Deals -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 class="font-semibold mb-4">Stagnant Deals (7+ days)</h3>
+                ${(adv.stagnant?.deals || []).length === 0 ? '<div class="text-sm text-gray-400 text-center py-4">No stagnant deals. Pipeline is healthy.</div>' : `
+                <div class="space-y-2 max-h-80 overflow-y-auto">
+                    ${(adv.stagnant?.deals || []).map(d => `
+                        <div class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer" onclick="openEditBusiness(${d.id})">
+                            <div>
+                                <div class="text-sm font-medium">${d.name}</div>
+                                <div class="text-xs text-gray-500">${stageLabel(d.pipeline_stage)} &middot; ${d.days_stagnant}d stagnant</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                ${d.pending_activities > 0 ? `<span class="text-xs text-yellow-600">${d.pending_activities} pending</span>` : '<span class="text-xs text-red-500">No activities</span>'}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`}
+            </div>
+        </div>
+
+        <!-- Territories -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-semibold">Territories</h3>
+                <button onclick="toggleTerritoryForm()" class="text-xs px-3 py-1.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">+ Add Territory</button>
+            </div>
+            <div id="territory-form" class="hidden mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input id="terr-name" placeholder="Territory name *" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <input id="terr-countries" placeholder="Countries (comma-separated)" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <div class="flex gap-2">
+                    <button onclick="saveTerritory()" class="flex-1 px-3 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 text-sm font-medium">Save</button>
+                    <button onclick="toggleTerritoryForm()" class="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>
+                </div>
+            </div>
+            ${territories.length === 0 ? '<div class="text-sm text-gray-400 text-center py-4">No territories defined yet.</div>' : `
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                ${territories.map(t => {
+                    const countries = typeof t.countries === 'string' ? JSON.parse(t.countries) : (t.countries || []);
+                    const users = typeof t.assigned_users === 'string' ? JSON.parse(t.assigned_users) : (t.assigned_users || []);
+                    return `
+                    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <div class="flex justify-between items-start">
+                            <div class="font-medium text-sm">${t.name}</div>
+                            <button onclick="deleteTerritory(${t.id})" class="text-xs text-red-500 hover:text-red-600">&#10005;</button>
+                        </div>
+                        ${t.description ? `<div class="text-xs text-gray-500 mt-1">${t.description}</div>` : ''}
+                        <div class="flex flex-wrap gap-1 mt-2">
+                            ${countries.map(c => `<span class="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded">${c}</span>`).join('')}
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>`}
+        </div>
+
+        <!-- Pipeline Forecast (from advanced stats) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold mb-4">Pipeline Forecast</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                ${(adv.forecast?.pipeline || []).map(p => `
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <div class="text-xl font-bold">${p.count}</div>
+                        <div class="text-xs text-gray-500 mt-1">${stageLabel(p.pipeline_stage)}</div>
+                        <div class="mt-2">${scoreRing(p.avg_score || 50)}</div>
+                        <div class="text-[10px] text-gray-400 mt-1">avg score</div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="mt-4 flex gap-6 text-sm text-gray-500">
+                <span>Activity this week: <strong class="text-gray-700 dark:text-gray-300">${adv.forecast?.velocity?.this_week || 0}</strong></span>
+                <span>Last week: <strong class="text-gray-700 dark:text-gray-300">${adv.forecast?.velocity?.last_week || 0}</strong></span>
+            </div>
+        </div>
+    `;
+}
+
+async function recalcAllScores() {
+    toast('Recalculating win scores...');
+    const bizRes = await api('/businesses');
+    const businesses = bizRes?.data || [];
+    let count = 0;
+    for (const b of businesses) {
+        const res = await api(`/crm/win-score/${b.id}`, { method: 'POST' });
+        if (res?.success) count++;
+    }
+    toast(`Recalculated ${count} win scores`);
+    renderIntelligence(document.getElementById('main-content'));
+}
+
+function toggleTerritoryForm() {
+    document.getElementById('territory-form')?.classList.toggle('hidden');
+}
+
+async function saveTerritory() {
+    const name = document.getElementById('terr-name')?.value?.trim();
+    if (!name) { toast('Territory name is required', 'error'); return; }
+    const countries = (document.getElementById('terr-countries')?.value || '').split(',').map(c => c.trim()).filter(c => c);
+
+    const res = await api('/crm/territories', { method: 'POST', body: { name, countries } });
+    if (res?.success) {
+        toast('Territory created');
+        renderIntelligence(document.getElementById('main-content'));
+    } else toast(res?.error || 'Failed', 'error');
+}
+
+async function deleteTerritory(id) {
+    if (!confirm('Delete this territory?')) return;
+    const res = await api(`/crm/territories/${id}`, { method: 'DELETE' });
+    if (res?.success) { toast('Territory deleted'); renderIntelligence(document.getElementById('main-content')); }
+    else toast(res?.error || 'Failed', 'error');
 }
 
 // --- USERS ---
@@ -819,6 +1394,20 @@ window.toggleActive = toggleActive;
 window.createApiKey = createApiKey;
 window.revokeKey = revokeKey;
 window.closeModal = closeModal;
+window.quickActivity = quickActivity;
+window.openActivityForm = openActivityForm;
+window.closeActivityForm = closeActivityForm;
+window.saveActivity = saveActivity;
+window.completeActivity = completeActivity;
+window.deleteActivity = deleteActivity;
+window.toggleAutomationBuilder = toggleAutomationBuilder;
+window.saveAutomation = saveAutomation;
+window.toggleAutomation = toggleAutomation;
+window.deleteAutomation = deleteAutomation;
+window.recalcAllScores = recalcAllScores;
+window.toggleTerritoryForm = toggleTerritoryForm;
+window.saveTerritory = saveTerritory;
+window.deleteTerritory = deleteTerritory;
 
 init();
 </script>
