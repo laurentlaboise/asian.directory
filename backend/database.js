@@ -1,4 +1,18 @@
-const Database = require('better-sqlite3');
+let Database;
+try {
+    Database = require('better-sqlite3');
+} catch (err) {
+    // better-sqlite3 is an optional dependency — not available on Railway (PostgreSQL only)
+    console.warn('better-sqlite3 not available. SQLite mode disabled. Set DATABASE_URL for PostgreSQL.');
+    // Export stubs so require() doesn't crash the process
+    module.exports = {
+        db: null,
+        dbOperations: null,
+        dbReady: Promise.reject(new Error('SQLite not available — set DATABASE_URL for PostgreSQL'))
+    };
+    return;
+}
+
 const path = require('path');
 const crypto = require('crypto');
 
@@ -828,8 +842,11 @@ const dbOperations = {
     }
 };
 
-// Initialize database on load
+// Initialize database on load (synchronous for SQLite)
 initDatabase();
 seedData();
 
-module.exports = { db, dbOperations };
+// Export a resolved promise for dbReady so server.js can use the same API
+const dbReady = Promise.resolve();
+
+module.exports = { db, dbOperations, dbReady };

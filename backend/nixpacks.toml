@@ -1,18 +1,15 @@
 # Nixpacks configuration for asian.directory backend
-# Compatible with Nixpacks v1.38.0+
+# Railway root directory: /backend
+# This file is what Railway reads for build configuration.
 
-# Define the providers/packages to use
 [phases.setup]
 nixPkgs = ['nodejs_18', 'npm-9_x', 'python311']
 
-# Install dependencies
 [phases.install]
 cmds = ['npm ci']
 
-# Build phase
 [phases.build]
 cmds = []
 
-# Start command
 [start]
-cmd = 'npm start'
+cmd = 'node server.js'

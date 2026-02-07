@@ -121,14 +121,18 @@
         // --- CONFIGURATION ---
         // Auto-detect environment and use appropriate API URL
         let API_BASE_URL;
-        if (window.location.hostname === 'localhost') {
-            API_BASE_URL = 'http://localhost:3000/api';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            // Local development — same origin
+            API_BASE_URL = window.location.origin + '/api';
         } else if (window.location.hostname.includes('asian.directory')) {
-            // Production - Backend hosted on Railway
-            API_BASE_URL = 'https://csxbygix.up.railway.app/api';
+            // Production frontend on asian.directory — backend on Railway
+            API_BASE_URL = 'https://asiandirectory-production-7ec4.up.railway.app/api';
+        } else if (window.location.hostname.includes('.up.railway.app')) {
+            // Served directly from Railway — same origin
+            API_BASE_URL = window.location.origin + '/api';
         } else {
-            // Codespaces
-            API_BASE_URL = window.location.protocol + '//' + window.location.hostname.replace('-8080', '-3000') + '/api';
+            // Codespaces or other environments — same origin
+            API_BASE_URL = window.location.origin + '/api';
         }
         
         // --- DATA ---
