@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Favicon: Icon-only, square format, yellow pin on transparent -->
+
+  <!-- Location Pin - centered in square -->
+  <g transform="translate(8, 2)">
+    <!-- Pin outer shape - yellow -->
+    <path d="M24 2C12.95 2 4 10.95 4 22c0 15 17.6 33.6 19.08 35.08a1.32 1.32 0 0 0 1.84 0C26.4 55.6 44 37 44 22 44 10.95 35.05 2 24 2z" fill="#FACC15"/>
+
+    <!-- Torii gate motif - dark -->
+    <g fill="#111827">
+      <!-- Torii top beam (kasagi) -->
+      <rect x="12" y="12" width="24" height="3" rx="0.8"/>
+      <!-- Torii secondary beam (nuki) -->
+      <rect x="14" y="17.5" width="20" height="2.2" rx="0.5"/>
+      <!-- Left pillar -->
+      <rect x="16" y="12" width="2.8" height="22" rx="0.5"/>
+      <!-- Right pillar -->
+      <rect x="29.2" y="12" width="2.8" height="22" rx="0.5"/>
+      <!-- Pillar bases -->
+      <rect x="14.5" y="32.5" width="5.5" height="1.8" rx="0.4"/>
+      <rect x="28" y="32.5" width="5.5" height="1.8" rx="0.4"/>
+    </g>
+  </g>
+</svg>

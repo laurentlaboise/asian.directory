@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Root favicon: compact icon for browser tab -->
+
+  <!-- Location Pin - centered -->
+  <g transform="translate(4, 1)">
+    <!-- Pin shape - yellow -->
+    <path d="M12 1C6.48 1 2 5.48 2 11c0 7.5 8.8 16.8 9.54 17.54a.66.66 0 0 0 .92 0C13.2 27.8 22 18.5 22 11 22 5.48 17.52 1 12 1z" fill="#FACC15"/>
+
+    <!-- Torii gate motif - dark, simplified for small size -->
+    <g fill="#111827">
+      <!-- Top beam -->
+      <rect x="5.5" y="6" width="13" height="1.8" rx="0.4"/>
+      <!-- Secondary beam -->
+      <rect x="6.5" y="9" width="11" height="1.4" rx="0.3"/>
+      <!-- Left pillar -->
+      <rect x="7.5" y="6" width="1.8" height="12" rx="0.3"/>
+      <!-- Right pillar -->
+      <rect x="14.7" y="6" width="1.8" height="12" rx="0.3"/>
+      <!-- Bases -->
+      <rect x="6.5" y="17" width="3.5" height="1.2" rx="0.3"/>
+      <rect x="14" y="17" width="3.5" height="1.2" rx="0.3"/>
+    </g>
+  </g>
+</svg>

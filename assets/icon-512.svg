@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- 512x512 app icon -->
+
+  <!-- Background circle - dark -->
+  <circle cx="256" cy="256" r="248" fill="#111827"/>
+
+  <!-- Subtle decorative ring -->
+  <circle cx="256" cy="256" r="234" fill="none" stroke="#FACC15" stroke-width="1" opacity="0.2"/>
+
+  <!-- Location Pin - centered -->
+  <g transform="translate(128, 40)">
+    <!-- Pin shape - yellow -->
+    <path d="M128 20C74.98 20 32 62.98 32 116c0 75 83.2 160 92.16 168.96a5.36 5.36 0 0 0 7.68 0C140.8 276 224 191 224 116 224 62.98 181.02 20 128 20z" fill="#FACC15"/>
+
+    <!-- Torii gate motif - dark on yellow -->
+    <g fill="#111827">
+      <!-- Torii top beam (kasagi) - the extended top piece -->
+      <rect x="68" y="62" width="120" height="14" rx="3"/>
+      <!-- Slight upward curve accent on top beam ends -->
+      <rect x="64" y="60" width="12" height="6" rx="2" transform="rotate(-8 70 63)"/>
+      <rect x="180" y="60" width="12" height="6" rx="2" transform="rotate(8 186 63)"/>
+
+      <!-- Torii secondary beam (nuki) -->
+      <rect x="76" y="86" width="104" height="10" rx="2"/>
+
+      <!-- Left pillar -->
+      <rect x="84" y="62" width="12" height="108" rx="2"/>
+      <!-- Right pillar -->
+      <rect x="160" y="62" width="12" height="108" rx="2"/>
+
+      <!-- Pillar bases (kamebara) -->
+      <rect x="78" y="166" width="24" height="8" rx="2"/>
+      <rect x="154" y="166" width="24" height="8" rx="2"/>
+    </g>
+  </g>
+
+  <!-- Text below pin -->
+  <text x="256" y="400" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="36" font-weight="400" fill="#F9FAFB" text-anchor="middle" letter-spacing="1">
+    <tspan font-weight="400">asian</tspan><tspan font-weight="700">.directory</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="256" y="436" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="18" font-weight="400" fill="#FACC15" text-anchor="middle" letter-spacing="3" opacity="0.8">DISCOVER ASIA</text>
+</svg>
