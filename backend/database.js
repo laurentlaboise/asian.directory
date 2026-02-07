@@ -47,23 +47,36 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS businesses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            business_type TEXT,
             category TEXT NOT NULL,
             description TEXT NOT NULL,
             address TEXT NOT NULL,
             country TEXT,
+            state_province TEXT,
             city TEXT,
+            postal_code TEXT,
             website TEXT,
             phone TEXT,
+            alt_phone TEXT,
             email TEXT,
             contact_person TEXT,
+            contact_person_title TEXT,
+            business_hours TEXT,
+            primary_language TEXT,
+            year_established INTEGER,
+            employee_count TEXT,
             socials TEXT,
             keywords TEXT,
+            meta_description TEXT,
+            target_audience TEXT,
+            special_offerings TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             verification_status TEXT NOT NULL DEFAULT 'unverified',
             pipeline_stage TEXT NOT NULL DEFAULT 'new_lead',
             priority TEXT NOT NULL DEFAULT 'medium',
             source TEXT DEFAULT 'manual',
             notes TEXT,
+            verification_notes TEXT,
             custom_fields TEXT,
             assigned_to INTEGER,
             rating REAL DEFAULT 0,
@@ -77,6 +90,29 @@ function initDatabase() {
             FOREIGN KEY (created_by) REFERENCES users(id)
         )
     `);
+
+    // Add new columns to existing businesses table if they don't exist (migration)
+    const existingCols = db.prepare("PRAGMA table_info(businesses)").all().map(c => c.name);
+    const newColumns = [
+        ['business_type', 'TEXT'],
+        ['state_province', 'TEXT'],
+        ['postal_code', 'TEXT'],
+        ['alt_phone', 'TEXT'],
+        ['contact_person_title', 'TEXT'],
+        ['business_hours', 'TEXT'],
+        ['primary_language', 'TEXT'],
+        ['year_established', 'INTEGER'],
+        ['employee_count', 'TEXT'],
+        ['meta_description', 'TEXT'],
+        ['target_audience', 'TEXT'],
+        ['special_offerings', 'TEXT'],
+        ['verification_notes', 'TEXT']
+    ];
+    for (const [col, type] of newColumns) {
+        if (!existingCols.includes(col)) {
+            db.exec(`ALTER TABLE businesses ADD COLUMN ${col} ${type}`);
+        }
+    }
 
     // Conversations table
     db.exec(`
@@ -304,6 +340,9 @@ function parseBusiness(business) {
         socials: business.socials ? JSON.parse(business.socials) : {},
         keywords: business.keywords ? JSON.parse(business.keywords) : [],
         custom_fields: business.custom_fields ? JSON.parse(business.custom_fields) : {},
+        business_hours: business.business_hours ? JSON.parse(business.business_hours) : null,
+        target_audience: business.target_audience ? JSON.parse(business.target_audience) : [],
+        special_offerings: business.special_offerings ? JSON.parse(business.special_offerings) : [],
         is_featured: !!business.is_featured,
         is_active: business.is_active !== undefined ? !!business.is_active : true
     };
@@ -391,23 +430,33 @@ const dbOperations = {
 
     addBusiness: (business) => {
         const stmt = db.prepare(`
-            INSERT INTO businesses (name, category, description, address, country, city, website, phone, email, contact_person, socials, keywords, status, verification_status, pipeline_stage, priority, source, notes, custom_fields, assigned_to, is_featured, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO businesses (name, business_type, category, description, address, country, state_province, city, postal_code, website, phone, alt_phone, email, contact_person, contact_person_title, business_hours, primary_language, year_established, employee_count, socials, keywords, meta_description, target_audience, special_offerings, status, verification_status, pipeline_stage, priority, source, notes, verification_notes, custom_fields, assigned_to, is_featured, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
-            business.name, business.category, business.description, business.address,
-            business.country || null, business.city || null,
-            business.website || null, business.phone || null,
+            business.name, business.business_type || null,
+            business.category, business.description, business.address,
+            business.country || null, business.state_province || null,
+            business.city || null, business.postal_code || null,
+            business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
+            business.contact_person_title || null,
+            business.business_hours ? JSON.stringify(business.business_hours) : null,
+            business.primary_language || null,
+            business.year_established || null, business.employee_count || null,
             JSON.stringify(business.socials || {}),
             JSON.stringify(business.keywords || []),
+            business.meta_description || null,
+            business.target_audience ? JSON.stringify(business.target_audience) : null,
+            business.special_offerings ? JSON.stringify(business.special_offerings) : null,
             business.status || 'pending',
             business.verification_status || 'unverified',
             business.pipeline_stage || 'new_lead',
             business.priority || 'medium',
             business.source || 'manual',
             business.notes || null,
+            business.verification_notes || null,
             JSON.stringify(business.custom_fields || {}),
             business.assigned_to || null,
             business.is_featured ? 1 : 0,
@@ -420,29 +469,43 @@ const dbOperations = {
     updateBusiness: (id, business) => {
         const stmt = db.prepare(`
             UPDATE businesses
-            SET name = ?, category = ?, description = ?, address = ?,
-                country = ?, city = ?,
-                website = ?, phone = ?, email = ?, contact_person = ?,
+            SET name = ?, business_type = ?, category = ?, description = ?, address = ?,
+                country = ?, state_province = ?, city = ?, postal_code = ?,
+                website = ?, phone = ?, alt_phone = ?, email = ?,
+                contact_person = ?, contact_person_title = ?,
+                business_hours = ?, primary_language = ?,
+                year_established = ?, employee_count = ?,
                 socials = ?, keywords = ?,
+                meta_description = ?, target_audience = ?, special_offerings = ?,
                 status = ?, verification_status = ?, pipeline_stage = ?,
-                priority = ?, notes = ?, custom_fields = ?,
-                assigned_to = ?, is_featured = ?,
+                priority = ?, notes = ?, verification_notes = ?,
+                custom_fields = ?, assigned_to = ?, is_featured = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `);
 
         const result = stmt.run(
-            business.name, business.category, business.description, business.address,
-            business.country || null, business.city || null,
-            business.website || null, business.phone || null,
+            business.name, business.business_type || null,
+            business.category, business.description, business.address,
+            business.country || null, business.state_province || null,
+            business.city || null, business.postal_code || null,
+            business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
+            business.contact_person_title || null,
+            business.business_hours ? JSON.stringify(business.business_hours) : null,
+            business.primary_language || null,
+            business.year_established || null, business.employee_count || null,
             JSON.stringify(business.socials || {}),
             JSON.stringify(business.keywords || []),
+            business.meta_description || null,
+            business.target_audience ? JSON.stringify(business.target_audience) : null,
+            business.special_offerings ? JSON.stringify(business.special_offerings) : null,
             business.status || 'pending',
             business.verification_status || 'unverified',
             business.pipeline_stage || 'new_lead',
             business.priority || 'medium',
             business.notes || null,
+            business.verification_notes || null,
             JSON.stringify(business.custom_fields || {}),
             business.assigned_to || null,
             business.is_featured ? 1 : 0,
@@ -829,7 +892,7 @@ const dbOperations = {
     exportBusinesses: (format = 'json', filters = {}) => {
         const businesses = dbOperations.getAllBusinesses(filters);
         if (format === 'csv') {
-            const headers = ['id', 'name', 'category', 'description', 'address', 'country', 'city', 'website', 'phone', 'email', 'status', 'pipeline_stage', 'created_at'];
+            const headers = ['id', 'name', 'business_type', 'category', 'description', 'address', 'country', 'state_province', 'city', 'postal_code', 'website', 'phone', 'alt_phone', 'email', 'contact_person', 'contact_person_title', 'primary_language', 'year_established', 'employee_count', 'status', 'pipeline_stage', 'priority', 'source', 'created_at'];
             const rows = businesses.map(b => headers.map(h => {
                 const val = b[h];
                 if (val === null || val === undefined) return '';

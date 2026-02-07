@@ -43,6 +43,59 @@
         .pipeline-card:active { cursor: grabbing; opacity: 0.7; }
         .pipeline-col.drag-over { background: rgba(250,204,21,0.1); border-color: #FACC15; }
         .modal-overlay { backdrop-filter: blur(4px); }
+        /* Tab navigation styles */
+        .form-tabs { display: flex; gap: 0; border-bottom: 2px solid #E5E7EB; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .form-tabs::-webkit-scrollbar { display: none; }
+        .form-tab { padding: 10px 16px; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+        .form-tab:hover { color: #374151; background: rgba(250,204,21,0.05); }
+        .form-tab.active { color: #D97706; border-bottom-color: #FACC15; font-weight: 600; }
+        .dark .form-tabs { border-bottom-color: #374151; }
+        .dark .form-tab { color: #9CA3AF; }
+        .dark .form-tab:hover { color: #E5E7EB; background: rgba(250,204,21,0.05); }
+        .dark .form-tab.active { color: #FACC15; }
+        .form-tab-panel { display: none; }
+        .form-tab-panel.active { display: block; }
+        /* Section headers */
+        .form-section-header { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #F3F4F6; }
+        .dark .form-section-header { color: #E5E7EB; border-bottom-color: #374151; }
+        .form-section-header svg { width: 18px; height: 18px; color: #D97706; flex-shrink: 0; }
+        /* Required indicator */
+        .form-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #374151; }
+        .dark .form-label { color: #D1D5DB; }
+        .form-label .required { color: #EF4444; margin-left: 2px; }
+        /* Form help text */
+        .form-help { font-size: 11px; color: #9CA3AF; margin-top: 3px; }
+        .dark .form-help { color: #6B7280; }
+        /* Character counter */
+        .char-counter { font-size: 11px; color: #9CA3AF; text-align: right; margin-top: 2px; transition: color 0.15s; }
+        .char-counter.warn { color: #D97706; }
+        .char-counter.over { color: #EF4444; font-weight: 600; }
+        /* Checkbox group */
+        .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; padding: 6px 12px; border: 1px solid #E5E7EB; border-radius: 8px; cursor: pointer; transition: all 0.15s; user-select: none; }
+        .checkbox-group label:hover { border-color: #FACC15; background: rgba(250,204,21,0.05); }
+        .checkbox-group input:checked + span { color: #92400E; }
+        .checkbox-group label:has(input:checked) { border-color: #FACC15; background: rgba(250,204,21,0.1); }
+        .dark .checkbox-group label { color: #D1D5DB; border-color: #4B5563; }
+        .dark .checkbox-group label:hover { border-color: #FACC15; background: rgba(250,204,21,0.1); }
+        .dark .checkbox-group input:checked + span { color: #FDE68A; }
+        /* Tooltip */
+        .form-tooltip { position: relative; display: inline-flex; align-items: center; cursor: help; }
+        .form-tooltip .tooltip-text { visibility: hidden; opacity: 0; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1F2937; color: #F9FAFB; font-size: 11px; font-weight: 400; padding: 6px 10px; border-radius: 6px; white-space: nowrap; max-width: 250px; white-space: normal; z-index: 10; transition: all 0.15s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .form-tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+        /* Progress bar */
+        .form-progress { display: flex; gap: 4px; padding: 0 24px; margin-bottom: 4px; }
+        .form-progress-dot { flex: 1; height: 3px; border-radius: 2px; background: #E5E7EB; transition: background 0.2s; }
+        .form-progress-dot.filled { background: #FACC15; }
+        .dark .form-progress-dot { background: #374151; }
+        .dark .form-progress-dot.filled { background: #FACC15; }
+        /* Input consistent style helper */
+        .form-input { width: 100%; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 8px; background: white; font-size: 14px; transition: all 0.15s; }
+        .form-input:focus { outline: none; border-color: #FACC15; box-shadow: 0 0 0 3px rgba(250,204,21,0.15); }
+        .dark .form-input { background: #374151; border-color: #4B5563; color: #F3F4F6; }
+        .dark .form-input:focus { border-color: #FACC15; box-shadow: 0 0 0 3px rgba(250,204,21,0.15); }
+        .form-input::placeholder { color: #9CA3AF; }
+        .dark .form-input::placeholder { color: #6B7280; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #9CA3AF; border-radius: 3px; }
@@ -153,44 +206,462 @@
 
 <!-- Business Modal -->
 <div id="business-modal" class="hidden fixed inset-0 z-50 modal-overlay bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-            <h2 id="modal-title" class="text-xl font-bold">Add Business</h2>
-            <button onclick="closeModal()" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col">
+        <!-- Modal Header -->
+        <div class="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
+            <div>
+                <h2 id="modal-title" class="text-xl font-bold">Add Business</h2>
+                <p class="text-xs text-gray-400 mt-0.5"><span class="text-red-400">*</span> indicates required fields</p>
+            </div>
+            <button onclick="closeModal()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Close">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
         </div>
-        <form id="business-form" class="p-6 space-y-4">
+
+        <!-- Tab Navigation -->
+        <div class="flex-shrink-0 px-6 pt-2">
+            <div class="form-tabs" id="form-tabs">
+                <button type="button" class="form-tab active" data-tab="tab-basic">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                    Basic Info
+                </button>
+                <button type="button" class="form-tab" data-tab="tab-location">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Location
+                </button>
+                <button type="button" class="form-tab" data-tab="tab-contact">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Contact
+                </button>
+                <button type="button" class="form-tab" data-tab="tab-social">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    Digital
+                </button>
+                <button type="button" class="form-tab" data-tab="tab-details">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    Details
+                </button>
+                <button type="button" class="form-tab" data-tab="tab-advanced">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Advanced
+                </button>
+            </div>
+        </div>
+
+        <!-- Progress Dots -->
+        <div class="form-progress" id="form-progress">
+            <div class="form-progress-dot filled"></div>
+            <div class="form-progress-dot"></div>
+            <div class="form-progress-dot"></div>
+            <div class="form-progress-dot"></div>
+            <div class="form-progress-dot"></div>
+            <div class="form-progress-dot"></div>
+        </div>
+
+        <!-- Form Content (Scrollable) -->
+        <form id="business-form" class="flex-1 overflow-y-auto">
             <input type="hidden" id="form-id">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Name *</label><input id="form-name" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Category *</label><input id="form-category" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Country</label><input id="form-country" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Address *</label><input id="form-address" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Description *</label><textarea id="form-description" required rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></textarea></div>
-                <div><label class="block text-sm font-medium mb-1">City</label><input id="form-city" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Phone</label><input id="form-phone" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Email</label><input id="form-email" type="email" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Website</label><input id="form-website" type="url" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Contact Person</label><input id="form-contact" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Keywords</label><input id="form-keywords" placeholder="comma-separated" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></div>
-                <div><label class="block text-sm font-medium mb-1">Status</label><select id="form-status" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"><option value="pending">Pending</option><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
-                <div><label class="block text-sm font-medium mb-1">Pipeline Stage</label><select id="form-pipeline" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"><option value="new_lead">New Lead</option><option value="contacted">Contacted</option><option value="in_review">In Review</option><option value="verified">Verified</option><option value="active_listing">Active Listing</option><option value="inactive">Inactive</option></select></div>
-                <div><label class="block text-sm font-medium mb-1">Priority</label><select id="form-priority" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
-                <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Notes</label><textarea id="form-notes" rows="2" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-yellow-400 focus:outline-none"></textarea></div>
-                <div class="md:col-span-2 border-t border-gray-200 dark:border-gray-700 pt-4"><h3 class="text-sm font-semibold mb-3">Social Media</h3>
-                    <div class="grid grid-cols-2 gap-3">
-                        <input id="form-instagram" placeholder="Instagram" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
-                        <input id="form-facebook" placeholder="Facebook" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
-                        <input id="form-x" placeholder="X (Twitter)" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
-                        <input id="form-linkedin" placeholder="LinkedIn" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+
+            <!-- Tab 1: Basic Information -->
+            <div id="tab-basic" class="form-tab-panel active p-6 space-y-4">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                    Business Identity
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="form-label" for="form-name">Business Name <span class="required">*</span></label>
+                        <input id="form-name" required maxlength="100" placeholder="e.g., Ichiran Ramen Shibuya" class="form-input">
+                        <div class="char-counter" data-for="form-name"><span class="count">0</span>/100</div>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-business-type">Business Type <span class="required">*</span></label>
+                        <select id="form-business-type" class="form-input">
+                            <option value="">Select type...</option>
+                            <option value="Restaurant">Restaurant</option>
+                            <option value="Coffee Shop">Coffee Shop</option>
+                            <option value="Attraction">Attraction</option>
+                            <option value="Market">Market</option>
+                            <option value="Hotel">Hotel</option>
+                            <option value="Retail">Retail</option>
+                            <option value="Service">Service</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Health & Wellness">Health & Wellness</option>
+                            <option value="Education">Education</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-category">Category <span class="required">*</span>
+                            <span class="form-tooltip">
+                                <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span class="tooltip-text">Specific category for directory listing, e.g., "Japanese Ramen", "Specialty Coffee"</span>
+                            </span>
+                        </label>
+                        <input id="form-category" required placeholder="e.g., Japanese Ramen, Specialty Coffee" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-primary-language">Primary Language</label>
+                        <select id="form-primary-language" class="form-input">
+                            <option value="">Select language...</option>
+                            <option value="English">English</option>
+                            <option value="Japanese">Japanese</option>
+                            <option value="Korean">Korean</option>
+                            <option value="Thai">Thai</option>
+                            <option value="Mandarin">Mandarin</option>
+                            <option value="Cantonese">Cantonese</option>
+                            <option value="Hindi">Hindi</option>
+                            <option value="Malay">Malay</option>
+                            <option value="Vietnamese">Vietnamese</option>
+                            <option value="Tagalog">Tagalog</option>
+                            <option value="Indonesian">Indonesian</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-website">Website URL</label>
+                        <input id="form-website" type="url" placeholder="https://www.example.com" class="form-input">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="form-label" for="form-description">Description <span class="required">*</span></label>
+                        <textarea id="form-description" required rows="4" minlength="50" maxlength="2000" placeholder="Describe the business, what makes it unique, what it offers..." class="form-input" style="resize: vertical;"></textarea>
+                        <div class="flex justify-between">
+                            <p class="form-help">Minimum 50 characters recommended for a quality listing</p>
+                            <div class="char-counter" data-for="form-description"><span class="count">0</span>/2000</div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="flex gap-3 pt-4">
-                <button type="submit" class="flex-1 py-2.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">Save</button>
-                <button type="button" id="delete-btn" class="hidden px-6 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium" onclick="deleteBusiness()">Delete</button>
-                <button type="button" onclick="closeModal()" class="px-6 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">Cancel</button>
+
+            <!-- Tab 2: Location & Address -->
+            <div id="tab-location" class="form-tab-panel p-6 space-y-4">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Location & Address
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label" for="form-country">Country <span class="required">*</span></label>
+                        <select id="form-country" class="form-input">
+                            <option value="">Select country...</option>
+                            <option value="China">China</option>
+                            <option value="Hong Kong">Hong Kong</option>
+                            <option value="India">India</option>
+                            <option value="Indonesia">Indonesia</option>
+                            <option value="Japan">Japan</option>
+                            <option value="Malaysia">Malaysia</option>
+                            <option value="Philippines">Philippines</option>
+                            <option value="Singapore">Singapore</option>
+                            <option value="South Korea">South Korea</option>
+                            <option value="Taiwan">Taiwan</option>
+                            <option value="Thailand">Thailand</option>
+                            <option value="Vietnam">Vietnam</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-state-province">State / Province</label>
+                        <input id="form-state-province" placeholder="e.g., Tokyo, Maharashtra, Bangkok" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-city">City <span class="required">*</span></label>
+                        <input id="form-city" required placeholder="e.g., Tokyo, Mumbai, Bangkok" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-postal-code">Postal / Zip Code</label>
+                        <input id="form-postal-code" placeholder="e.g., 150-0002, 400013" class="form-input">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="form-label" for="form-address">Street Address <span class="required">*</span></label>
+                        <input id="form-address" required maxlength="200" placeholder="e.g., 1-22-7 Jinnan, Shibuya-ku" class="form-input">
+                        <p class="form-help">Full street address for map display and directions</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Contact Information -->
+            <div id="tab-contact" class="form-tab-panel p-6 space-y-4">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Contact Information
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label" for="form-phone">Phone Number</label>
+                        <input id="form-phone" type="tel" placeholder="e.g., +81 3-5428-3444" class="form-input">
+                        <p class="form-help">Include country code for international listings</p>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-alt-phone">Alternative Phone</label>
+                        <input id="form-alt-phone" type="tel" placeholder="e.g., +81 3-5428-3445" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-email">Email Address</label>
+                        <input id="form-email" type="email" placeholder="e.g., info@business.com" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-contact">Contact Person</label>
+                        <input id="form-contact" placeholder="e.g., Tanaka Yuki" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-contact-title">Contact Person Title</label>
+                        <input id="form-contact-title" placeholder="e.g., Manager, Owner, PR Director" class="form-input">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="form-label" for="form-business-hours">Business Hours</label>
+                        <textarea id="form-business-hours" rows="3" placeholder="e.g., Mon-Fri: 11:00-22:00&#10;Sat-Sun: 10:00-23:00&#10;Closed on public holidays" class="form-input" style="resize: vertical;"></textarea>
+                        <p class="form-help">Enter operating hours - one line per day or range of days</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Digital Presence -->
+            <div id="tab-social" class="form-tab-panel p-6 space-y-4">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    Digital Presence & Social Media
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label" for="form-instagram">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-pink-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                                Instagram
+                            </span>
+                        </label>
+                        <input id="form-instagram" placeholder="@username or profile URL" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-facebook">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                Facebook
+                            </span>
+                        </label>
+                        <input id="form-facebook" placeholder="Page URL or username" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-x">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                                X (Twitter)
+                            </span>
+                        </label>
+                        <input id="form-x" placeholder="@username" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-linkedin">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-blue-700" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                LinkedIn
+                            </span>
+                        </label>
+                        <input id="form-linkedin" placeholder="Company page URL" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-youtube">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                YouTube
+                            </span>
+                        </label>
+                        <input id="form-youtube" placeholder="Channel URL" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-tiktok">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+                                TikTok
+                            </span>
+                        </label>
+                        <input id="form-tiktok" placeholder="@username" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-whatsapp">WhatsApp / WeChat</label>
+                        <input id="form-whatsapp" placeholder="Phone number or ID" class="form-input">
+                        <p class="form-help">Regional messaging contact method</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 5: Business Details -->
+            <div id="tab-details" class="form-tab-panel p-6 space-y-5">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    Classification & Operations
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="form-label" for="form-status">Status <span class="required">*</span>
+                            <span class="form-tooltip">
+                                <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span class="tooltip-text">Active = live on directory. Pending = awaiting review. Inactive = hidden from public.</span>
+                            </span>
+                        </label>
+                        <select id="form-status" class="form-input">
+                            <option value="pending">Pending</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-pipeline">Pipeline Stage <span class="required">*</span>
+                            <span class="form-tooltip">
+                                <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span class="tooltip-text">Tracks progress from initial lead to active listing</span>
+                            </span>
+                        </label>
+                        <select id="form-pipeline" class="form-input">
+                            <option value="new_lead">New Lead</option>
+                            <option value="contacted">Contacted</option>
+                            <option value="in_review">In Review</option>
+                            <option value="verified">Verified</option>
+                            <option value="active_listing">Active Listing</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-priority">Priority</label>
+                        <select id="form-priority" class="form-input">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="form-label" for="form-year-established">Year Established</label>
+                        <input id="form-year-established" type="number" min="1800" max="2026" placeholder="e.g., 2015" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-employee-count">Number of Employees</label>
+                        <select id="form-employee-count" class="form-input">
+                            <option value="">Select range...</option>
+                            <option value="1-10">1-10</option>
+                            <option value="11-50">11-50</option>
+                            <option value="51-100">51-100</option>
+                            <option value="101-500">101-500</option>
+                            <option value="500+">500+</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-source">Source
+                            <span class="form-tooltip">
+                                <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span class="tooltip-text">How was this business discovered or added?</span>
+                            </span>
+                        </label>
+                        <select id="form-source" class="form-input">
+                            <option value="manual">Manual Entry</option>
+                            <option value="web_scraping">Web Scraping</option>
+                            <option value="user_submission">User Submission</option>
+                            <option value="import">Data Import</option>
+                            <option value="referral">Referral</option>
+                            <option value="social_media">Social Media</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Content & SEO sub-section -->
+                <div class="form-section-header mt-2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+                    Content & SEO
+                </div>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="form-label" for="form-keywords">Keywords / Tags <span class="required">*</span></label>
+                        <input id="form-keywords" placeholder="e.g., ramen, noodle, japanese food, tokyo eats" class="form-input">
+                        <p class="form-help">Comma-separated keywords that help users find this business</p>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-meta-description">Meta Description
+                            <span class="form-tooltip">
+                                <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span class="tooltip-text">Short description for search engine results (150-160 characters ideal)</span>
+                            </span>
+                        </label>
+                        <textarea id="form-meta-description" rows="2" maxlength="200" placeholder="Concise description for search engine results..." class="form-input" style="resize: vertical;"></textarea>
+                        <div class="char-counter" data-for="form-meta-description"><span class="count">0</span>/200</div>
+                    </div>
+                </div>
+
+                <!-- Target Audience -->
+                <div>
+                    <label class="form-label">Target Audience</label>
+                    <div class="checkbox-group" id="target-audience-group">
+                        <label><input type="checkbox" value="Tourists" class="mr-1 accent-yellow-400"><span>Tourists</span></label>
+                        <label><input type="checkbox" value="Residents" class="mr-1 accent-yellow-400"><span>Residents</span></label>
+                        <label><input type="checkbox" value="Families" class="mr-1 accent-yellow-400"><span>Families</span></label>
+                        <label><input type="checkbox" value="Business" class="mr-1 accent-yellow-400"><span>Business</span></label>
+                        <label><input type="checkbox" value="Students" class="mr-1 accent-yellow-400"><span>Students</span></label>
+                        <label><input type="checkbox" value="Couples" class="mr-1 accent-yellow-400"><span>Couples</span></label>
+                        <label><input type="checkbox" value="Solo Travelers" class="mr-1 accent-yellow-400"><span>Solo Travelers</span></label>
+                    </div>
+                </div>
+
+                <!-- Special Offerings -->
+                <div>
+                    <label class="form-label">Special Offerings</label>
+                    <div class="checkbox-group" id="special-offerings-group">
+                        <label><input type="checkbox" value="Delivery" class="mr-1 accent-yellow-400"><span>Delivery</span></label>
+                        <label><input type="checkbox" value="Takeout" class="mr-1 accent-yellow-400"><span>Takeout</span></label>
+                        <label><input type="checkbox" value="Dine-in" class="mr-1 accent-yellow-400"><span>Dine-in</span></label>
+                        <label><input type="checkbox" value="Reservations" class="mr-1 accent-yellow-400"><span>Reservations</span></label>
+                        <label><input type="checkbox" value="Online Orders" class="mr-1 accent-yellow-400"><span>Online Orders</span></label>
+                        <label><input type="checkbox" value="WiFi" class="mr-1 accent-yellow-400"><span>WiFi</span></label>
+                        <label><input type="checkbox" value="Parking" class="mr-1 accent-yellow-400"><span>Parking</span></label>
+                        <label><input type="checkbox" value="Wheelchair Access" class="mr-1 accent-yellow-400"><span>Wheelchair Access</span></label>
+                        <label><input type="checkbox" value="English Menu" class="mr-1 accent-yellow-400"><span>English Menu</span></label>
+                        <label><input type="checkbox" value="Credit Cards" class="mr-1 accent-yellow-400"><span>Credit Cards</span></label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 6: Advanced / Internal -->
+            <div id="tab-advanced" class="form-tab-panel p-6 space-y-4">
+                <div class="form-section-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Internal & Notes
+                </div>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="form-label" for="form-verification-notes">Verification Notes</label>
+                        <textarea id="form-verification-notes" rows="3" placeholder="Why was this verified or what's pending verification..." class="form-input" style="resize: vertical;"></textarea>
+                        <p class="form-help">Internal notes about the verification process</p>
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-notes">Internal Notes</label>
+                        <textarea id="form-notes" rows="3" placeholder="Any internal notes or reminders about this business..." class="form-input" style="resize: vertical;"></textarea>
+                        <p class="form-help">Private notes not shown to the public</p>
+                    </div>
+                </div>
+                <!-- Metadata (readonly for edit mode) -->
+                <div id="form-metadata" class="hidden">
+                    <div class="form-section-header mt-2">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Metadata
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-500 dark:text-gray-400">
+                        <div class="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <span class="font-medium">Created:</span>
+                            <span id="form-created-at">-</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <span class="font-medium">Last Updated:</span>
+                            <span id="form-updated-at">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fixed Footer -->
+            <div class="sticky bottom-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex gap-3 items-center">
+                <button type="submit" class="flex-1 py-2.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-semibold text-sm transition-colors">
+                    Save Business
+                </button>
+                <button type="button" id="delete-btn" class="hidden px-5 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium text-sm transition-colors" onclick="deleteBusiness()">Delete</button>
+                <button type="button" onclick="closeModal()" class="px-5 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium transition-colors">Cancel</button>
             </div>
         </form>
     </div>
@@ -1256,13 +1727,88 @@ async function renderAuditLog(el) {
 
 // ==================== MODAL HANDLERS ====================
 function openModal() { document.getElementById('business-modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeModal() { document.getElementById('business-modal').classList.add('hidden'); document.body.style.overflow = ''; document.getElementById('business-form').reset(); document.getElementById('form-id').value = ''; }
+function closeModal() {
+    document.getElementById('business-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+    document.getElementById('business-form').reset();
+    document.getElementById('form-id').value = '';
+    // Reset to first tab
+    switchFormTab('tab-basic');
+    // Reset checkbox groups
+    document.querySelectorAll('#target-audience-group input, #special-offerings-group input').forEach(cb => cb.checked = false);
+    // Reset char counters
+    document.querySelectorAll('.char-counter .count').forEach(el => el.textContent = '0');
+    document.querySelectorAll('.char-counter').forEach(el => { el.classList.remove('warn', 'over'); });
+    // Hide metadata
+    document.getElementById('form-metadata').classList.add('hidden');
+}
+
+// Tab navigation
+function switchFormTab(tabId) {
+    // Update tab buttons
+    document.querySelectorAll('#form-tabs .form-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
+    // Update tab panels
+    document.querySelectorAll('.form-tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(tabId)?.classList.add('active');
+    // Update progress dots
+    const tabs = ['tab-basic', 'tab-location', 'tab-contact', 'tab-social', 'tab-details', 'tab-advanced'];
+    const activeIndex = tabs.indexOf(tabId);
+    document.querySelectorAll('#form-progress .form-progress-dot').forEach((dot, i) => {
+        dot.classList.toggle('filled', i <= activeIndex);
+    });
+}
+
+document.getElementById('form-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.form-tab');
+    if (tab) switchFormTab(tab.dataset.tab);
+});
+
+// Character counters
+function initCharCounters() {
+    document.querySelectorAll('.char-counter[data-for]').forEach(counter => {
+        const input = document.getElementById(counter.dataset.for);
+        if (!input) return;
+        const maxLen = parseInt(input.getAttribute('maxlength')) || 0;
+        function update() {
+            const len = input.value.length;
+            counter.querySelector('.count').textContent = len;
+            counter.classList.toggle('warn', maxLen > 0 && len > maxLen * 0.85);
+            counter.classList.toggle('over', maxLen > 0 && len > maxLen);
+        }
+        input.addEventListener('input', update);
+        update();
+    });
+}
+initCharCounters();
+
+// Helper: get values from checkbox group
+function getCheckboxValues(groupId) {
+    return Array.from(document.querySelectorAll(`#${groupId} input:checked`)).map(cb => cb.value);
+}
+
+// Helper: set values in checkbox group
+function setCheckboxValues(groupId, values) {
+    const arr = Array.isArray(values) ? values : [];
+    document.querySelectorAll(`#${groupId} input`).forEach(cb => {
+        cb.checked = arr.includes(cb.value);
+    });
+}
+
+// Helper: get form field value or null
+function fv(id) { const el = document.getElementById(id); return el ? (el.value.trim() || null) : null; }
 
 function openAddBusiness() {
     document.getElementById('modal-title').textContent = 'Add Business';
     document.getElementById('delete-btn').classList.add('hidden');
     document.getElementById('form-id').value = '';
     document.getElementById('business-form').reset();
+    document.getElementById('form-metadata').classList.add('hidden');
+    // Reset checkboxes
+    document.querySelectorAll('#target-audience-group input, #special-offerings-group input').forEach(cb => cb.checked = false);
+    switchFormTab('tab-basic');
+    // Reset char counters
+    document.querySelectorAll('.char-counter .count').forEach(el => el.textContent = '0');
     openModal();
 }
 
@@ -1274,54 +1820,137 @@ async function openEditBusiness(id) {
     document.getElementById('modal-title').textContent = 'Edit Business';
     document.getElementById('delete-btn').classList.remove('hidden');
     document.getElementById('form-id').value = b.id;
+
+    // Tab 1: Basic Info
     document.getElementById('form-name').value = b.name || '';
+    document.getElementById('form-business-type').value = b.business_type || '';
     document.getElementById('form-category').value = b.category || '';
-    document.getElementById('form-country').value = b.country || '';
-    document.getElementById('form-city').value = b.city || '';
-    document.getElementById('form-address').value = b.address || '';
-    document.getElementById('form-description').value = b.description || '';
-    document.getElementById('form-phone').value = b.phone || '';
-    document.getElementById('form-email').value = b.email || '';
+    document.getElementById('form-primary-language').value = b.primary_language || '';
     document.getElementById('form-website').value = b.website || '';
+    document.getElementById('form-description').value = b.description || '';
+
+    // Tab 2: Location
+    document.getElementById('form-country').value = b.country || '';
+    document.getElementById('form-state-province').value = b.state_province || '';
+    document.getElementById('form-city').value = b.city || '';
+    document.getElementById('form-postal-code').value = b.postal_code || '';
+    document.getElementById('form-address').value = b.address || '';
+
+    // Tab 3: Contact
+    document.getElementById('form-phone').value = b.phone || '';
+    document.getElementById('form-alt-phone').value = b.alt_phone || '';
+    document.getElementById('form-email').value = b.email || '';
     document.getElementById('form-contact').value = b.contact_person || '';
-    document.getElementById('form-keywords').value = (b.keywords || []).join(', ');
-    document.getElementById('form-status').value = b.status || 'pending';
-    document.getElementById('form-pipeline').value = b.pipeline_stage || 'new_lead';
-    document.getElementById('form-priority').value = b.priority || 'medium';
-    document.getElementById('form-notes').value = b.notes || '';
+    document.getElementById('form-contact-title').value = b.contact_person_title || '';
+    // Business hours: stored as JSON string or plain text
+    const hours = b.business_hours;
+    if (hours && typeof hours === 'object') {
+        document.getElementById('form-business-hours').value = Object.entries(hours).map(([k,v]) => `${k}: ${v}`).join('\n');
+    } else {
+        document.getElementById('form-business-hours').value = hours || '';
+    }
+
+    // Tab 4: Social / Digital
     const s = b.socials || {};
     document.getElementById('form-instagram').value = s.instagram || '';
     document.getElementById('form-facebook').value = s.facebook || '';
     document.getElementById('form-x').value = s.x || '';
     document.getElementById('form-linkedin').value = s.linkedin || '';
+    document.getElementById('form-youtube').value = s.youtube || '';
+    document.getElementById('form-tiktok').value = s.tiktok || '';
+    document.getElementById('form-whatsapp').value = s.whatsapp || '';
+
+    // Tab 5: Details
+    document.getElementById('form-status').value = b.status || 'pending';
+    document.getElementById('form-pipeline').value = b.pipeline_stage || 'new_lead';
+    document.getElementById('form-priority').value = b.priority || 'medium';
+    document.getElementById('form-year-established').value = b.year_established || '';
+    document.getElementById('form-employee-count').value = b.employee_count || '';
+    document.getElementById('form-source').value = b.source || 'manual';
+    document.getElementById('form-keywords').value = (b.keywords || []).join(', ');
+    document.getElementById('form-meta-description').value = b.meta_description || '';
+    setCheckboxValues('target-audience-group', b.target_audience || []);
+    setCheckboxValues('special-offerings-group', b.special_offerings || []);
+
+    // Tab 6: Advanced
+    document.getElementById('form-verification-notes').value = b.verification_notes || '';
+    document.getElementById('form-notes').value = b.notes || '';
+
+    // Show metadata
+    if (b.created_at || b.updated_at) {
+        document.getElementById('form-metadata').classList.remove('hidden');
+        document.getElementById('form-created-at').textContent = b.created_at ? formatDate(b.created_at) : '-';
+        document.getElementById('form-updated-at').textContent = b.updated_at ? formatDate(b.updated_at) : '-';
+    }
+
+    // Update char counters
+    document.querySelectorAll('.char-counter[data-for]').forEach(counter => {
+        const input = document.getElementById(counter.dataset.for);
+        if (input) {
+            const maxLen = parseInt(input.getAttribute('maxlength')) || 0;
+            const len = input.value.length;
+            counter.querySelector('.count').textContent = len;
+            counter.classList.toggle('warn', maxLen > 0 && len > maxLen * 0.85);
+            counter.classList.toggle('over', maxLen > 0 && len > maxLen);
+        }
+    });
+
+    switchFormTab('tab-basic');
     openModal();
 }
 
 document.getElementById('business-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('form-id').value;
+
+    // Parse business hours text into a simple string (keep it simple)
+    const hoursText = fv('form-business-hours');
+
     const body = {
+        // Basic Info
         name: document.getElementById('form-name').value,
+        business_type: fv('form-business-type'),
         category: document.getElementById('form-category').value,
+        primary_language: fv('form-primary-language'),
+        website: fv('form-website'),
         description: document.getElementById('form-description').value,
+        // Location
+        country: fv('form-country'),
+        state_province: fv('form-state-province'),
+        city: fv('form-city'),
+        postal_code: fv('form-postal-code'),
         address: document.getElementById('form-address').value,
-        country: document.getElementById('form-country').value || null,
-        city: document.getElementById('form-city').value || null,
-        phone: document.getElementById('form-phone').value || null,
-        email: document.getElementById('form-email').value || null,
-        website: document.getElementById('form-website').value || null,
-        contact_person: document.getElementById('form-contact').value || null,
-        keywords: document.getElementById('form-keywords').value.split(',').map(k=>k.trim()).filter(k=>k),
+        // Contact
+        phone: fv('form-phone'),
+        alt_phone: fv('form-alt-phone'),
+        email: fv('form-email'),
+        contact_person: fv('form-contact'),
+        contact_person_title: fv('form-contact-title'),
+        business_hours: hoursText,
+        // Social
+        socials: {
+            instagram: fv('form-instagram'),
+            facebook: fv('form-facebook'),
+            x: fv('form-x'),
+            linkedin: fv('form-linkedin'),
+            youtube: fv('form-youtube'),
+            tiktok: fv('form-tiktok'),
+            whatsapp: fv('form-whatsapp')
+        },
+        // Details
         status: document.getElementById('form-status').value,
         pipeline_stage: document.getElementById('form-pipeline').value,
         priority: document.getElementById('form-priority').value,
-        notes: document.getElementById('form-notes').value || null,
-        socials: {
-            instagram: document.getElementById('form-instagram').value || null,
-            facebook: document.getElementById('form-facebook').value || null,
-            x: document.getElementById('form-x').value || null,
-            linkedin: document.getElementById('form-linkedin').value || null
-        }
+        year_established: document.getElementById('form-year-established').value ? parseInt(document.getElementById('form-year-established').value) : null,
+        employee_count: fv('form-employee-count'),
+        source: fv('form-source') || 'manual',
+        keywords: document.getElementById('form-keywords').value.split(',').map(k=>k.trim()).filter(k=>k),
+        meta_description: fv('form-meta-description'),
+        target_audience: getCheckboxValues('target-audience-group'),
+        special_offerings: getCheckboxValues('special-offerings-group'),
+        // Advanced
+        verification_notes: fv('form-verification-notes'),
+        notes: fv('form-notes')
     };
 
     const res = id
@@ -1388,6 +2017,7 @@ async function init() {
 window.openAddBusiness = openAddBusiness;
 window.openEditBusiness = openEditBusiness;
 window.deleteBusiness = deleteBusiness;
+window.switchFormTab = switchFormTab;
 window.exportData = exportData;
 window.handleDrop = handleDrop;
 window.updateRole = updateRole;
