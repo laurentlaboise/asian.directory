@@ -17,6 +17,11 @@ const packageJson = require('./package.json');
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const dbModule = require(USE_POSTGRES ? './database-postgres' : './database');
 const { dbOperations, dbReady } = dbModule;
+
+if (!dbOperations) {
+    console.error('FATAL: No database available. Set DATABASE_URL for PostgreSQL or install better-sqlite3 for local SQLite.');
+    process.exit(1);
+}
 console.log(`Using database: ${USE_POSTGRES ? 'PostgreSQL' : 'SQLite'}`);
 
 // ---------------------------------------------------------------------------
