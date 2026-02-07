@@ -1,32 +1,60 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
 
-// PostgreSQL connection
+// ---------------------------------------------------------------------------
+// PostgreSQL connection pool
+// ---------------------------------------------------------------------------
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
 });
 
-// Test connection
-pool.query('SELECT NOW()', (err) => {
-    if (err) {
-        console.error('PostgreSQL connection error:', err);
-    } else {
-        console.log('PostgreSQL connection successful');
+pool.on('error', (err) => {
+    console.error('Unexpected PostgreSQL pool error:', err);
+});
+
+// ---------------------------------------------------------------------------
+// Connection with retry (Railway PG may not be ready on first attempt)
+// ---------------------------------------------------------------------------
+async function connectWithRetry(maxRetries = 5) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const client = await pool.connect();
+            const res = await client.query('SELECT NOW()');
+            client.release();
+            console.log(`PostgreSQL connected (attempt ${attempt}): ${res.rows[0].now}`);
+            return;
+        } catch (err) {
+            console.error(`PostgreSQL connection attempt ${attempt}/${maxRetries} failed:`, err.message);
+            if (attempt === maxRetries) {
+                throw new Error(`Could not connect to PostgreSQL after ${maxRetries} attempts: ${err.message}`);
+            }
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 16000);
+            console.log(`Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
     }
-});
+}
 
-// Initialize database tables
+// ---------------------------------------------------------------------------
+// Create all tables and indexes
+// ---------------------------------------------------------------------------
 async function initDatabase() {
-    const client = await pool.connect();
+    await connectWithRetry();
 
+    const client = await pool.connect();
     try {
-        // Users table with roles and OAuth support
+        await client.query('BEGIN');
+
+        // Users table
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE,
+                email TEXT,
                 password TEXT,
                 role TEXT NOT NULL DEFAULT 'viewer',
                 display_name TEXT,
@@ -34,13 +62,19 @@ async function initDatabase() {
                 oauth_provider TEXT,
                 oauth_id TEXT,
                 is_active BOOLEAN NOT NULL DEFAULT true,
-                last_login TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_login TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
-        // Businesses table with CRM fields
+        // Unique index on email that allows multiple NULLs
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+            ON users (email) WHERE email IS NOT NULL
+        `);
+
+        // Businesses table
         await client.query(`
             CREATE TABLE IF NOT EXISTS businesses (
                 id SERIAL PRIMARY KEY,
@@ -63,14 +97,14 @@ async function initDatabase() {
                 source TEXT DEFAULT 'manual',
                 notes TEXT,
                 custom_fields JSONB DEFAULT '{}',
-                assigned_to INTEGER REFERENCES users(id),
+                assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
                 rating REAL DEFAULT 0,
                 review_count INTEGER DEFAULT 0,
                 is_featured BOOLEAN DEFAULT false,
-                last_contacted TIMESTAMP,
-                created_by INTEGER REFERENCES users(id),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_contacted TIMESTAMPTZ,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
@@ -83,7 +117,7 @@ async function initDatabase() {
                 business_ids JSONB,
                 session_id TEXT,
                 ip_address TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
@@ -98,9 +132,9 @@ async function initDatabase() {
                 permissions JSONB NOT NULL DEFAULT '["read"]',
                 rate_limit INTEGER NOT NULL DEFAULT 100,
                 is_active BOOLEAN NOT NULL DEFAULT true,
-                last_used TIMESTAMP,
-                expires_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_used TIMESTAMPTZ,
+                expires_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
@@ -114,7 +148,7 @@ async function initDatabase() {
                 status_code INTEGER,
                 response_time_ms INTEGER,
                 ip_address TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
@@ -122,37 +156,37 @@ async function initDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS audit_log (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id),
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
                 action TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
                 entity_id INTEGER,
                 old_values JSONB,
                 new_values JSONB,
                 ip_address TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
-        // Communication history for CRM
+        // Communications
         await client.query(`
             CREATE TABLE IF NOT EXISTS communications (
                 id SERIAL PRIMARY KEY,
                 business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-                user_id INTEGER NOT NULL REFERENCES users(id),
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 type TEXT NOT NULL DEFAULT 'note',
                 subject TEXT,
                 content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
-        // Tags for businesses
+        // Tags
         await client.query(`
             CREATE TABLE IF NOT EXISTS tags (
                 id SERIAL PRIMARY KEY,
                 name TEXT UNIQUE NOT NULL,
                 color TEXT DEFAULT '#6B7280',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
@@ -173,30 +207,28 @@ async function initDatabase() {
                 session_id TEXT,
                 ip_address TEXT,
                 user_agent TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
-        // Create indexes
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_businesses_name ON businesses(name);
-            CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category);
-            CREATE INDEX IF NOT EXISTS idx_businesses_country ON businesses(country);
-            CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(status);
-            CREATE INDEX IF NOT EXISTS idx_businesses_pipeline ON businesses(pipeline_stage);
-            CREATE INDEX IF NOT EXISTS idx_businesses_created_at ON businesses(created_at);
-            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-            CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
-            CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage(api_key_id);
-            CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at);
-            CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
-            CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
-            CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type);
-        `);
+        // Indexes for performance
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(status)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_country ON businesses(country)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_pipeline ON businesses(pipeline_stage)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_created ON businesses(created_at)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_name_lower ON businesses(LOWER(name))`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage(api_key_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type)`);
 
-        console.log('Database initialized successfully');
+        await client.query('COMMIT');
+        console.log('PostgreSQL tables and indexes created successfully');
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Database initialization error:', error);
         throw error;
     } finally {
@@ -204,100 +236,94 @@ async function initDatabase() {
     }
 }
 
+// ---------------------------------------------------------------------------
 // Seed initial data
+// ---------------------------------------------------------------------------
 async function seedData() {
-    const client = await pool.connect();
+    const result = await pool.query('SELECT COUNT(*)::int as count FROM businesses');
+    if (result.rows[0].count > 0) return;
 
-    try {
-        const result = await client.query('SELECT COUNT(*) as count FROM businesses');
-        const count = parseInt(result.rows[0].count);
+    console.log('Seeding initial business data...');
 
-        if (count === 0) {
-            console.log('Seeding initial business data...');
-
-            const businesses = [
-                {
-                    name: "Ichiran Ramen",
-                    category: "Restaurant",
-                    description: "Famous for its classic Tonkotsu ramen with customizable solo dining booths. A must-try for any ramen lover.",
-                    address: "Shibuya, Tokyo, Japan",
-                    country: "Japan",
-                    city: "Tokyo",
-                    website: "https://en.ichiran.com/shop/tokyo-shibuya/",
-                    phone: "+81 3-5428-3444",
-                    socials: { instagram: "ichiran_jp", x: "ICHIRANJAPAN" },
-                    keywords: ["ramen", "noodle", "japanese", "food", "tokyo"]
-                },
-                {
-                    name: "Gardens by the Bay",
-                    category: "Attraction",
-                    description: "Iconic nature park spanning 101 hectares, featuring the Supertree Grove and cooled conservatories.",
-                    address: "Marina Gardens Dr, Singapore",
-                    country: "Singapore",
-                    city: "Singapore",
-                    website: "https://www.gardensbythebay.com.sg",
-                    phone: "+65 6420 6848",
-                    socials: { instagram: "gardensbythebay", facebook: "gardensbythebay", tiktok: "gardensbythebay", youtube: "gardensbythebay" },
-                    keywords: ["park", "nature", "tourist", "singapore", "flowers", "supertree"]
-                },
-                {
-                    name: "Onion Cafe",
-                    category: "Coffee Shop",
-                    description: "A trendy, industrial-chic cafe in a renovated factory building, known for its specialty coffee and baked goods.",
-                    address: "Seongsu-dong, Seoul, South Korea",
-                    country: "South Korea",
-                    city: "Seoul",
-                    website: null,
-                    phone: "+82 2-1644-1629",
-                    socials: { instagram: "cafe.onion" },
-                    keywords: ["coffee", "cafe", "bakery", "seoul", "korea", "trendy"]
-                },
-                {
-                    name: "Chatuchak Weekend Market",
-                    category: "Market",
-                    description: "One of the world's largest outdoor markets, offering everything from clothing to street food.",
-                    address: "Kamphaeng Phet 2 Rd, Bangkok, Thailand",
-                    country: "Thailand",
-                    city: "Bangkok",
-                    website: "http://www.chatuchakmarket.org/",
-                    phone: null,
-                    socials: { facebook: "ChatuchakMarket" },
-                    keywords: ["market", "shopping", "food", "bangkok", "thailand", "souvenirs"]
-                },
-                {
-                    name: "The Bombay Canteen",
-                    category: "Restaurant",
-                    description: "Celebrates Indian cuisine with a modern twist in a vibrant, retro-inspired setting.",
-                    address: "Lower Parel, Mumbai, India",
-                    country: "India",
-                    city: "Mumbai",
-                    website: "https://www.thebombaycanteen.com/",
-                    phone: "+91 22 4966 6666",
-                    socials: { instagram: "thebombaycanteen", facebook: "TheBombayCanteen", x: "TheBombayCanteen" },
-                    keywords: ["indian", "food", "restaurant", "mumbai", "modern", "dinner"]
-                }
-            ];
-
-            for (const b of businesses) {
-                await client.query(`
-                    INSERT INTO businesses (name, category, description, address, country, city, website, phone, socials, keywords, status, verification_status, pipeline_stage)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', 'verified', 'active_listing')
-                `, [
-                    b.name, b.category, b.description, b.address, b.country, b.city,
-                    b.website, b.phone, JSON.stringify(b.socials), JSON.stringify(b.keywords)
-                ]);
-            }
-
-            console.log('Initial data seeded successfully');
+    const businesses = [
+        {
+            name: "Ichiran Ramen",
+            category: "Restaurant",
+            description: "Famous for its classic Tonkotsu ramen with customizable solo dining booths. A must-try for any ramen lover.",
+            address: "Shibuya, Tokyo, Japan",
+            country: "Japan",
+            city: "Tokyo",
+            website: "https://en.ichiran.com/shop/tokyo-shibuya/",
+            phone: "+81 3-5428-3444",
+            socials: { instagram: "ichiran_jp", x: "ICHIRANJAPAN" },
+            keywords: ["ramen", "noodle", "japanese", "food", "tokyo"]
+        },
+        {
+            name: "Gardens by the Bay",
+            category: "Attraction",
+            description: "Iconic nature park spanning 101 hectares, featuring the Supertree Grove and cooled conservatories.",
+            address: "Marina Gardens Dr, Singapore",
+            country: "Singapore",
+            city: "Singapore",
+            website: "https://www.gardensbythebay.com.sg",
+            phone: "+65 6420 6848",
+            socials: { instagram: "gardensbythebay", facebook: "gardensbythebay", tiktok: "gardensbythebay", youtube: "gardensbythebay" },
+            keywords: ["park", "nature", "tourist", "singapore", "flowers", "supertree"]
+        },
+        {
+            name: "Onion Cafe",
+            category: "Coffee Shop",
+            description: "A trendy, industrial-chic cafe in a renovated factory building, known for its specialty coffee and baked goods.",
+            address: "Seongsu-dong, Seoul, South Korea",
+            country: "South Korea",
+            city: "Seoul",
+            website: null,
+            phone: "+82 2-1644-1629",
+            socials: { instagram: "cafe.onion" },
+            keywords: ["coffee", "cafe", "bakery", "seoul", "korea", "trendy"]
+        },
+        {
+            name: "Chatuchak Weekend Market",
+            category: "Market",
+            description: "One of the world's largest outdoor markets, offering everything from clothing to street food.",
+            address: "Kamphaeng Phet 2 Rd, Bangkok, Thailand",
+            country: "Thailand",
+            city: "Bangkok",
+            website: "http://www.chatuchakmarket.org/",
+            phone: null,
+            socials: { facebook: "ChatuchakMarket" },
+            keywords: ["market", "shopping", "food", "bangkok", "thailand", "souvenirs"]
+        },
+        {
+            name: "The Bombay Canteen",
+            category: "Restaurant",
+            description: "Celebrates Indian cuisine with a modern twist in a vibrant, retro-inspired setting.",
+            address: "Lower Parel, Mumbai, India",
+            country: "India",
+            city: "Mumbai",
+            website: "https://www.thebombaycanteen.com/",
+            phone: "+91 22 4966 6666",
+            socials: { instagram: "thebombaycanteen", facebook: "TheBombayCanteen", x: "TheBombayCanteen" },
+            keywords: ["indian", "food", "restaurant", "mumbai", "modern", "dinner"]
         }
-    } catch (error) {
-        console.error('Seeding error:', error);
-    } finally {
-        client.release();
+    ];
+
+    for (const b of businesses) {
+        await pool.query(`
+            INSERT INTO businesses (name, category, description, address, country, city, website, phone, socials, keywords, status, verification_status, pipeline_stage)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', 'verified', 'active_listing')
+        `, [
+            b.name, b.category, b.description, b.address, b.country, b.city,
+            b.website, b.phone, JSON.stringify(b.socials), JSON.stringify(b.keywords)
+        ]);
     }
+
+    console.log('Initial data seeded successfully');
 }
 
-// Helper to normalize JSON fields from PostgreSQL
+// ---------------------------------------------------------------------------
+// Normalize JSONB fields (PG returns objects, not strings)
+// ---------------------------------------------------------------------------
 function parseBusiness(business) {
     if (!business) return null;
     return {
@@ -308,72 +334,57 @@ function parseBusiness(business) {
     };
 }
 
+function parseJsonField(val) {
+    if (val === null || val === undefined) return val;
+    return typeof val === 'string' ? JSON.parse(val) : val;
+}
+
+// ---------------------------------------------------------------------------
 // Database operations
+// ---------------------------------------------------------------------------
 const dbOperations = {
     // ==================== BUSINESS OPERATIONS ====================
     getAllBusinesses: async (filters = {}) => {
         let sql = 'SELECT * FROM businesses WHERE 1=1';
         const params = [];
-        let paramIndex = 1;
+        let idx = 1;
 
-        if (filters.status) {
-            sql += ` AND status = $${paramIndex++}`;
-            params.push(filters.status);
-        }
-        if (filters.category) {
-            sql += ` AND category = $${paramIndex++}`;
-            params.push(filters.category);
-        }
-        if (filters.country) {
-            sql += ` AND country = $${paramIndex++}`;
-            params.push(filters.country);
-        }
-        if (filters.pipeline_stage) {
-            sql += ` AND pipeline_stage = $${paramIndex++}`;
-            params.push(filters.pipeline_stage);
-        }
-        if (filters.verification_status) {
-            sql += ` AND verification_status = $${paramIndex++}`;
-            params.push(filters.verification_status);
-        }
-        if (filters.assigned_to) {
-            sql += ` AND assigned_to = $${paramIndex++}`;
-            params.push(filters.assigned_to);
-        }
-        if (filters.priority) {
-            sql += ` AND priority = $${paramIndex++}`;
-            params.push(filters.priority);
-        }
+        if (filters.status)              { sql += ` AND status = $${idx++}`;              params.push(filters.status); }
+        if (filters.category)            { sql += ` AND category = $${idx++}`;            params.push(filters.category); }
+        if (filters.country)             { sql += ` AND country = $${idx++}`;             params.push(filters.country); }
+        if (filters.pipeline_stage)      { sql += ` AND pipeline_stage = $${idx++}`;      params.push(filters.pipeline_stage); }
+        if (filters.verification_status) { sql += ` AND verification_status = $${idx++}`; params.push(filters.verification_status); }
+        if (filters.assigned_to)         { sql += ` AND assigned_to = $${idx++}`;         params.push(filters.assigned_to); }
+        if (filters.priority)            { sql += ` AND priority = $${idx++}`;            params.push(filters.priority); }
 
         sql += ' ORDER BY created_at DESC';
 
-        if (filters.limit) {
-            sql += ` LIMIT $${paramIndex++}`;
-            params.push(filters.limit);
-        }
-        if (filters.offset) {
-            sql += ` OFFSET $${paramIndex++}`;
-            params.push(filters.offset);
-        }
+        if (filters.limit)  { sql += ` LIMIT $${idx++}`;  params.push(filters.limit); }
+        if (filters.offset) { sql += ` OFFSET $${idx++}`; params.push(filters.offset); }
 
         const result = await pool.query(sql, params);
         return result.rows.map(parseBusiness);
     },
 
     searchBusinesses: async (query) => {
-        const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+        const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+        if (terms.length === 0) return [];
 
-        if (searchTerms.length === 0) {
-            return [];
-        }
-
-        const conditions = searchTerms.map((_, index) => {
-            const p = index + 1;
-            return `(LOWER(name) LIKE $${p} OR LOWER(category) LIKE $${p} OR LOWER(description) LIKE $${p} OR LOWER(address) LIKE $${p} OR LOWER(keywords::text) LIKE $${p} OR LOWER(COALESCE(country,'')) LIKE $${p} OR LOWER(COALESCE(city,'')) LIKE $${p})`;
+        const conditions = terms.map((_, i) => {
+            const p = i + 1;
+            return `(
+                LOWER(name) LIKE $${p}
+                OR LOWER(category) LIKE $${p}
+                OR LOWER(description) LIKE $${p}
+                OR LOWER(address) LIKE $${p}
+                OR LOWER(keywords::text) LIKE $${p}
+                OR LOWER(COALESCE(country,'')) LIKE $${p}
+                OR LOWER(COALESCE(city,'')) LIKE $${p}
+            )`;
         }).join(' OR ');
 
         const sql = `SELECT * FROM businesses WHERE status = 'active' AND (${conditions}) ORDER BY is_featured DESC, created_at DESC`;
-        const params = searchTerms.map(term => `%${term}%`);
+        const params = terms.map(t => `%${t}%`);
 
         const result = await pool.query(sql, params);
         return result.rows.map(parseBusiness);
@@ -387,7 +398,7 @@ const dbOperations = {
     addBusiness: async (business) => {
         const result = await pool.query(`
             INSERT INTO businesses (name, category, description, address, country, city, website, phone, email, contact_person, socials, keywords, status, verification_status, pipeline_stage, priority, source, notes, custom_fields, assigned_to, is_featured, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
             RETURNING id
         `, [
             business.name, business.category, business.description, business.address,
@@ -407,22 +418,18 @@ const dbOperations = {
             business.is_featured || false,
             business.created_by || null
         ]);
-
         return result.rows[0].id;
     },
 
     updateBusiness: async (id, business) => {
         const result = await pool.query(`
             UPDATE businesses
-            SET name = $1, category = $2, description = $3, address = $4,
-                country = $5, city = $6,
-                website = $7, phone = $8, email = $9, contact_person = $10,
-                socials = $11, keywords = $12,
-                status = $13, verification_status = $14, pipeline_stage = $15,
-                priority = $16, notes = $17, custom_fields = $18,
-                assigned_to = $19, is_featured = $20,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $21
+            SET name=$1, category=$2, description=$3, address=$4,
+                country=$5, city=$6, website=$7, phone=$8, email=$9, contact_person=$10,
+                socials=$11, keywords=$12, status=$13, verification_status=$14,
+                pipeline_stage=$15, priority=$16, notes=$17, custom_fields=$18,
+                assigned_to=$19, is_featured=$20, updated_at=NOW()
+            WHERE id=$21
         `, [
             business.name, business.category, business.description, business.address,
             business.country || null, business.city || null,
@@ -440,16 +447,15 @@ const dbOperations = {
             business.is_featured || false,
             id
         ]);
-
         return result.rowCount > 0;
     },
 
     updateBusinessField: async (id, field, value) => {
-        const allowedFields = ['status', 'verification_status', 'pipeline_stage', 'priority', 'assigned_to', 'is_featured', 'last_contacted', 'notes'];
-        if (!allowedFields.includes(field)) {
+        const allowed = ['status', 'verification_status', 'pipeline_stage', 'priority', 'assigned_to', 'is_featured', 'last_contacted', 'notes'];
+        if (!allowed.includes(field)) {
             throw new Error(`Field ${field} is not allowed for partial update`);
         }
-        const result = await pool.query(`UPDATE businesses SET ${field} = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [value, id]);
+        const result = await pool.query(`UPDATE businesses SET ${field} = $1, updated_at = NOW() WHERE id = $2`, [value, id]);
         return result.rowCount > 0;
     },
 
@@ -459,21 +465,23 @@ const dbOperations = {
     },
 
     getBusinessStats: async () => {
-        const total = (await pool.query('SELECT COUNT(*) as count FROM businesses')).rows[0].count;
-        const byStatus = (await pool.query('SELECT status, COUNT(*) as count FROM businesses GROUP BY status')).rows;
-        const byCategory = (await pool.query('SELECT category, COUNT(*) as count FROM businesses GROUP BY category ORDER BY count DESC LIMIT 10')).rows;
-        const byCountry = (await pool.query('SELECT country, COUNT(*) as count FROM businesses WHERE country IS NOT NULL GROUP BY country ORDER BY count DESC')).rows;
-        const byPipeline = (await pool.query('SELECT pipeline_stage, COUNT(*) as count FROM businesses GROUP BY pipeline_stage')).rows;
-        const byPriority = (await pool.query('SELECT priority, COUNT(*) as count FROM businesses GROUP BY priority')).rows;
-        const recentlyAdded = (await pool.query("SELECT COUNT(*) as count FROM businesses WHERE created_at >= NOW() - INTERVAL '7 days'")).rows[0].count;
-        const featured = (await pool.query('SELECT COUNT(*) as count FROM businesses WHERE is_featured = true')).rows[0].count;
-
-        return { total: parseInt(total), byStatus, byCategory, byCountry, byPipeline, byPriority, recentlyAdded: parseInt(recentlyAdded), featured: parseInt(featured) };
+        const total = (await pool.query('SELECT COUNT(*)::int as count FROM businesses')).rows[0].count;
+        const byStatus = (await pool.query('SELECT status, COUNT(*)::int as count FROM businesses GROUP BY status')).rows;
+        const byCategory = (await pool.query('SELECT category, COUNT(*)::int as count FROM businesses GROUP BY category ORDER BY count DESC LIMIT 10')).rows;
+        const byCountry = (await pool.query('SELECT country, COUNT(*)::int as count FROM businesses WHERE country IS NOT NULL GROUP BY country ORDER BY count DESC')).rows;
+        const byPipeline = (await pool.query('SELECT pipeline_stage, COUNT(*)::int as count FROM businesses GROUP BY pipeline_stage')).rows;
+        const byPriority = (await pool.query('SELECT priority, COUNT(*)::int as count FROM businesses GROUP BY priority')).rows;
+        const recentlyAdded = (await pool.query("SELECT COUNT(*)::int as count FROM businesses WHERE created_at >= NOW() - INTERVAL '7 days'")).rows[0].count;
+        const featured = (await pool.query('SELECT COUNT(*)::int as count FROM businesses WHERE is_featured = true')).rows[0].count;
+        return { total, byStatus, byCategory, byCountry, byPipeline, byPriority, recentlyAdded, featured };
     },
 
     bulkUpdatePipeline: async (ids, pipeline_stage) => {
         const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
-        const result = await pool.query(`UPDATE businesses SET pipeline_stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, [pipeline_stage, ...ids]);
+        const result = await pool.query(
+            `UPDATE businesses SET pipeline_stage = $1, updated_at = NOW() WHERE id IN (${placeholders})`,
+            [pipeline_stage, ...ids]
+        );
         return result.rowCount;
     },
 
@@ -491,34 +499,25 @@ const dbOperations = {
     saveConversation: async (userQuery, aiResponse, businessIds, sessionId, ipAddress) => {
         const result = await pool.query(`
             INSERT INTO conversations (user_query, ai_response, business_ids, session_id, ip_address)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id
-        `, [
-            userQuery,
-            JSON.stringify(aiResponse),
-            JSON.stringify(businessIds || []),
-            sessionId || null,
-            ipAddress || null
-        ]);
-
+            VALUES ($1, $2, $3, $4, $5) RETURNING id
+        `, [userQuery, JSON.stringify(aiResponse), JSON.stringify(businessIds || []), sessionId || null, ipAddress || null]);
         return result.rows[0].id;
     },
 
     getAllConversations: async (limit = 100, offset = 0) => {
         const result = await pool.query('SELECT * FROM conversations ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]);
-
-        return result.rows.map(conv => ({
-            ...conv,
-            ai_response: typeof conv.ai_response === 'string' ? JSON.parse(conv.ai_response) : conv.ai_response,
-            business_ids: typeof conv.business_ids === 'string' ? JSON.parse(conv.business_ids) : conv.business_ids
+        return result.rows.map(c => ({
+            ...c,
+            ai_response: parseJsonField(c.ai_response),
+            business_ids: parseJsonField(c.business_ids)
         }));
     },
 
     getConversationStats: async () => {
-        const total = (await pool.query('SELECT COUNT(*) as count FROM conversations')).rows[0].count;
-        const today = (await pool.query("SELECT COUNT(*) as count FROM conversations WHERE created_at >= CURRENT_DATE")).rows[0].count;
-        const thisWeek = (await pool.query("SELECT COUNT(*) as count FROM conversations WHERE created_at >= NOW() - INTERVAL '7 days'")).rows[0].count;
-        return { total: parseInt(total), today: parseInt(today), thisWeek: parseInt(thisWeek) };
+        const total = (await pool.query('SELECT COUNT(*)::int as count FROM conversations')).rows[0].count;
+        const today = (await pool.query("SELECT COUNT(*)::int as count FROM conversations WHERE created_at >= CURRENT_DATE")).rows[0].count;
+        const thisWeek = (await pool.query("SELECT COUNT(*)::int as count FROM conversations WHERE created_at >= NOW() - INTERVAL '7 days'")).rows[0].count;
+        return { total, today, thisWeek };
     },
 
     // ==================== USER OPERATIONS ====================
@@ -526,15 +525,11 @@ const dbOperations = {
         try {
             const result = await pool.query(`
                 INSERT INTO users (username, password, email, role, display_name)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id
+                VALUES ($1, $2, $3, $4, $5) RETURNING id
             `, [username, hashedPassword, email || null, role, displayName || username]);
-
             return result.rows[0].id;
         } catch (error) {
-            if (error.code === '23505') {
-                throw new Error('Username already exists');
-            }
+            if (error.code === '23505') throw new Error('Username already exists');
             throw error;
         }
     },
@@ -545,11 +540,10 @@ const dbOperations = {
             INSERT INTO users (username, email, oauth_provider, oauth_id, display_name, avatar_url, role)
             VALUES ($1, $2, $3, $4, $5, $6, 'viewer')
             ON CONFLICT(username) DO UPDATE SET
-                last_login = CURRENT_TIMESTAMP,
+                last_login = NOW(),
                 display_name = EXCLUDED.display_name,
                 avatar_url = EXCLUDED.avatar_url
         `, [username, email, provider, oauthId, displayName, avatarUrl]);
-
         const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
         return result.rows[0];
     },
@@ -580,17 +574,17 @@ const dbOperations = {
     },
 
     updateUserRole: async (id, role) => {
-        const result = await pool.query('UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [role, id]);
+        const result = await pool.query('UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2', [role, id]);
         return result.rowCount > 0;
     },
 
     updateUserLogin: async (id) => {
-        const result = await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+        const result = await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [id]);
         return result.rowCount > 0;
     },
 
     toggleUserActive: async (id, isActive) => {
-        const result = await pool.query('UPDATE users SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [isActive, id]);
+        const result = await pool.query('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [isActive, id]);
         return result.rowCount > 0;
     },
 
@@ -599,13 +593,10 @@ const dbOperations = {
         const rawKey = `ad_${crypto.randomBytes(32).toString('hex')}`;
         const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
         const keyPrefix = rawKey.substring(0, 10);
-
         const result = await pool.query(`
             INSERT INTO api_keys (user_id, key_hash, key_prefix, name, permissions, rate_limit, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
         `, [userId, keyHash, keyPrefix, name, JSON.stringify(permissions), rateLimit, expiresAt]);
-
         return { id: result.rows[0].id, key: rawKey, prefix: keyPrefix };
     },
 
@@ -613,38 +604,32 @@ const dbOperations = {
         const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
         const result = await pool.query(`
             SELECT ak.*, u.username, u.role
-            FROM api_keys ak
-            JOIN users u ON ak.user_id = u.id
+            FROM api_keys ak JOIN users u ON ak.user_id = u.id
             WHERE ak.key_hash = $1 AND ak.is_active = true
             AND (ak.expires_at IS NULL OR ak.expires_at > NOW())
         `, [keyHash]);
-
         const key = result.rows[0];
         if (key) {
-            await pool.query('UPDATE api_keys SET last_used = CURRENT_TIMESTAMP WHERE id = $1', [key.id]);
-            key.permissions = typeof key.permissions === 'string' ? JSON.parse(key.permissions) : key.permissions;
+            await pool.query('UPDATE api_keys SET last_used = NOW() WHERE id = $1', [key.id]);
+            key.permissions = parseJsonField(key.permissions);
         }
         return key || null;
     },
 
     getApiKeysByUser: async (userId) => {
-        const result = await pool.query('SELECT id, key_prefix, name, permissions, rate_limit, is_active, last_used, expires_at, created_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
-        return result.rows.map(k => ({
-            ...k,
-            permissions: typeof k.permissions === 'string' ? JSON.parse(k.permissions) : k.permissions
-        }));
+        const result = await pool.query(
+            'SELECT id, key_prefix, name, permissions, rate_limit, is_active, last_used, expires_at, created_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC',
+            [userId]
+        );
+        return result.rows.map(k => ({ ...k, permissions: parseJsonField(k.permissions) }));
     },
 
     getAllApiKeys: async () => {
         const result = await pool.query(`
             SELECT ak.id, ak.key_prefix, ak.name, ak.permissions, ak.rate_limit, ak.is_active, ak.last_used, ak.expires_at, ak.created_at, u.username
-            FROM api_keys ak JOIN users u ON ak.user_id = u.id
-            ORDER BY ak.created_at DESC
+            FROM api_keys ak JOIN users u ON ak.user_id = u.id ORDER BY ak.created_at DESC
         `);
-        return result.rows.map(k => ({
-            ...k,
-            permissions: typeof k.permissions === 'string' ? JSON.parse(k.permissions) : k.permissions
-        }));
+        return result.rows.map(k => ({ ...k, permissions: parseJsonField(k.permissions) }));
     },
 
     revokeApiKey: async (id) => {
@@ -653,106 +638,89 @@ const dbOperations = {
     },
 
     logApiUsage: async (apiKeyId, endpoint, method, statusCode, responseTimeMs, ipAddress) => {
-        await pool.query(`
-            INSERT INTO api_usage (api_key_id, endpoint, method, status_code, response_time_ms, ip_address)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `, [apiKeyId, endpoint, method, statusCode, responseTimeMs, ipAddress]);
+        await pool.query(
+            'INSERT INTO api_usage (api_key_id, endpoint, method, status_code, response_time_ms, ip_address) VALUES ($1,$2,$3,$4,$5,$6)',
+            [apiKeyId, endpoint, method, statusCode, responseTimeMs, ipAddress]
+        );
     },
 
     getApiUsageStats: async (apiKeyId, days = 30) => {
         const usage = (await pool.query(`
-            SELECT DATE(created_at) as date, COUNT(*) as requests, AVG(response_time_ms) as avg_response_time
+            SELECT DATE(created_at) as date, COUNT(*)::int as requests, ROUND(AVG(response_time_ms)) as avg_response_time
             FROM api_usage
-            WHERE api_key_id = $1 AND created_at >= NOW() - ($2 || ' days')::INTERVAL
-            GROUP BY DATE(created_at)
-            ORDER BY date DESC
+            WHERE api_key_id = $1 AND created_at >= NOW() - make_interval(days => $2)
+            GROUP BY DATE(created_at) ORDER BY date DESC
         `, [apiKeyId, days])).rows;
 
-        const total = (await pool.query('SELECT COUNT(*) as count FROM api_usage WHERE api_key_id = $1', [apiKeyId])).rows[0].count;
+        const total = (await pool.query('SELECT COUNT(*)::int as count FROM api_usage WHERE api_key_id = $1', [apiKeyId])).rows[0].count;
+
         const byEndpoint = (await pool.query(`
-            SELECT endpoint, method, COUNT(*) as count
+            SELECT endpoint, method, COUNT(*)::int as count
             FROM api_usage WHERE api_key_id = $1
             GROUP BY endpoint, method ORDER BY count DESC LIMIT 10
         `, [apiKeyId])).rows;
 
-        return { usage, total: parseInt(total), byEndpoint };
+        return { usage, total, byEndpoint };
     },
 
     // ==================== AUDIT LOG OPERATIONS ====================
     addAuditLog: async (userId, action, entityType, entityId, oldValues, newValues, ipAddress) => {
-        await pool.query(`
-            INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_values, new_values, ip_address)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `, [
-            userId, action, entityType, entityId,
-            oldValues ? JSON.stringify(oldValues) : null,
-            newValues ? JSON.stringify(newValues) : null,
-            ipAddress
-        ]);
+        await pool.query(
+            'INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_values, new_values, ip_address) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+            [userId, action, entityType, entityId,
+             oldValues ? JSON.stringify(oldValues) : null,
+             newValues ? JSON.stringify(newValues) : null,
+             ipAddress]
+        );
     },
 
     getAuditLog: async (limit = 50, offset = 0, entityType = null) => {
-        let sql = `
-            SELECT al.*, u.username, u.display_name
-            FROM audit_log al
-            LEFT JOIN users u ON al.user_id = u.id
-            WHERE 1=1
-        `;
+        let sql = 'SELECT al.*, u.username, u.display_name FROM audit_log al LEFT JOIN users u ON al.user_id = u.id WHERE 1=1';
         const params = [];
-        let paramIndex = 1;
+        let idx = 1;
 
-        if (entityType) {
-            sql += ` AND al.entity_type = $${paramIndex++}`;
-            params.push(entityType);
-        }
-
-        sql += ` ORDER BY al.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        if (entityType) { sql += ` AND al.entity_type = $${idx++}`; params.push(entityType); }
+        sql += ` ORDER BY al.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
         params.push(limit, offset);
 
         const result = await pool.query(sql, params);
         return result.rows.map(log => ({
             ...log,
-            old_values: typeof log.old_values === 'string' ? JSON.parse(log.old_values) : log.old_values,
-            new_values: typeof log.new_values === 'string' ? JSON.parse(log.new_values) : log.new_values
+            old_values: parseJsonField(log.old_values),
+            new_values: parseJsonField(log.new_values)
         }));
     },
 
     // ==================== COMMUNICATION OPERATIONS ====================
     addCommunication: async (businessId, userId, type, subject, content) => {
-        const result = await pool.query(`
-            INSERT INTO communications (business_id, user_id, type, subject, content)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id
-        `, [businessId, userId, type, subject || null, content]);
+        const result = await pool.query(
+            'INSERT INTO communications (business_id, user_id, type, subject, content) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+            [businessId, userId, type, subject || null, content]
+        );
         return result.rows[0].id;
     },
 
     getCommunications: async (businessId) => {
         const result = await pool.query(`
-            SELECT c.*, u.username, u.display_name
-            FROM communications c
-            JOIN users u ON c.user_id = u.id
-            WHERE c.business_id = $1
-            ORDER BY c.created_at DESC
+            SELECT c.*, u.username, u.display_name FROM communications c
+            JOIN users u ON c.user_id = u.id WHERE c.business_id = $1 ORDER BY c.created_at DESC
         `, [businessId]);
         return result.rows;
     },
 
     // ==================== TAG OPERATIONS ====================
     createTag: async (name, color) => {
-        const result = await pool.query(`
-            INSERT INTO tags (name, color) VALUES ($1, $2)
-            ON CONFLICT(name) DO NOTHING
-            RETURNING id
-        `, [name, color || '#6B7280']);
+        const result = await pool.query(
+            'INSERT INTO tags (name, color) VALUES ($1, $2) ON CONFLICT(name) DO NOTHING RETURNING id',
+            [name, color || '#6B7280']
+        );
         if (result.rows.length > 0) return result.rows[0].id;
         const existing = await pool.query('SELECT id FROM tags WHERE name = $1', [name]);
         return existing.rows[0].id;
     },
 
     getAllTags: async () => {
-        const result = await pool.query('SELECT * FROM tags ORDER BY name');
-        return result.rows;
+        return (await pool.query('SELECT * FROM tags ORDER BY name')).rows;
     },
 
     addBusinessTag: async (businessId, tagId) => {
@@ -764,65 +732,52 @@ const dbOperations = {
     },
 
     getBusinessTags: async (businessId) => {
-        const result = await pool.query(`
-            SELECT t.* FROM tags t
-            JOIN business_tags bt ON t.id = bt.tag_id
-            WHERE bt.business_id = $1
-            ORDER BY t.name
-        `, [businessId]);
-        return result.rows;
+        return (await pool.query(`
+            SELECT t.* FROM tags t JOIN business_tags bt ON t.id = bt.tag_id WHERE bt.business_id = $1 ORDER BY t.name
+        `, [businessId])).rows;
     },
 
     // ==================== ANALYTICS OPERATIONS ====================
     trackEvent: async (eventType, eventData, sessionId, ipAddress, userAgent) => {
-        await pool.query(`
-            INSERT INTO analytics_events (event_type, event_data, session_id, ip_address, user_agent)
-            VALUES ($1, $2, $3, $4, $5)
-        `, [eventType, eventData ? JSON.stringify(eventData) : null, sessionId, ipAddress, userAgent]);
+        await pool.query(
+            'INSERT INTO analytics_events (event_type, event_data, session_id, ip_address, user_agent) VALUES ($1,$2,$3,$4,$5)',
+            [eventType, eventData ? JSON.stringify(eventData) : null, sessionId, ipAddress, userAgent]
+        );
     },
 
     getAnalyticsSummary: async (days = 30) => {
-        const searchCount = (await pool.query(`
-            SELECT COUNT(*) as count FROM conversations WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL
-        `, [days])).rows[0].count;
+        const searchCount = (await pool.query(
+            "SELECT COUNT(*)::int as count FROM conversations WHERE created_at >= NOW() - make_interval(days => $1)", [days]
+        )).rows[0].count;
 
-        const pageViews = (await pool.query(`
-            SELECT COUNT(*) as count FROM analytics_events WHERE event_type = 'page_view' AND created_at >= NOW() - ($1 || ' days')::INTERVAL
-        `, [days])).rows[0].count;
+        const pageViews = (await pool.query(
+            "SELECT COUNT(*)::int as count FROM analytics_events WHERE event_type = 'page_view' AND created_at >= NOW() - make_interval(days => $1)", [days]
+        )).rows[0].count;
 
-        const dailySearches = (await pool.query(`
-            SELECT DATE(created_at) as date, COUNT(*) as count
-            FROM conversations
-            WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL
-            GROUP BY DATE(created_at)
-            ORDER BY date
-        `, [days])).rows;
+        const dailySearches = (await pool.query(
+            "SELECT DATE(created_at) as date, COUNT(*)::int as count FROM conversations WHERE created_at >= NOW() - make_interval(days => $1) GROUP BY DATE(created_at) ORDER BY date", [days]
+        )).rows;
 
-        const topSearches = (await pool.query(`
-            SELECT user_query, COUNT(*) as count
-            FROM conversations
-            WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL
-            GROUP BY LOWER(user_query), user_query
-            ORDER BY count DESC
-            LIMIT 10
-        `, [days])).rows;
+        const topSearches = (await pool.query(
+            "SELECT user_query, COUNT(*)::int as count FROM conversations WHERE created_at >= NOW() - make_interval(days => $1) GROUP BY LOWER(user_query), user_query ORDER BY count DESC LIMIT 10", [days]
+        )).rows;
 
-        return { searchCount: parseInt(searchCount), pageViews: parseInt(pageViews), dailySearches, topSearches };
+        return { searchCount, pageViews, dailySearches, topSearches };
     },
 
     getDashboardStats: async () => {
         const businessStats = await dbOperations.getBusinessStats();
         const conversationStats = await dbOperations.getConversationStats();
-        const userCount = (await pool.query('SELECT COUNT(*) as count FROM users')).rows[0].count;
-        const apiKeyCount = (await pool.query('SELECT COUNT(*) as count FROM api_keys WHERE is_active = true')).rows[0].count;
-        const recentAudit = (await pool.query("SELECT COUNT(*) as count FROM audit_log WHERE created_at >= NOW() - INTERVAL '24 hours'")).rows[0].count;
+        const userCount = (await pool.query('SELECT COUNT(*)::int as count FROM users')).rows[0].count;
+        const apiKeyCount = (await pool.query('SELECT COUNT(*)::int as count FROM api_keys WHERE is_active = true')).rows[0].count;
+        const recentAudit = (await pool.query("SELECT COUNT(*)::int as count FROM audit_log WHERE created_at >= NOW() - INTERVAL '24 hours'")).rows[0].count;
 
         return {
             businesses: businessStats,
             conversations: conversationStats,
-            users: { total: parseInt(userCount) },
-            apiKeys: { active: parseInt(apiKeyCount) },
-            recentActivity: parseInt(recentAudit)
+            users: { total: userCount },
+            apiKeys: { active: apiKeyCount },
+            recentActivity: recentAudit
         };
     },
 
@@ -830,7 +785,7 @@ const dbOperations = {
     exportBusinesses: async (format = 'json', filters = {}) => {
         const businesses = await dbOperations.getAllBusinesses(filters);
         if (format === 'csv') {
-            const headers = ['id', 'name', 'category', 'description', 'address', 'country', 'city', 'website', 'phone', 'email', 'status', 'pipeline_stage', 'created_at'];
+            const headers = ['id','name','category','description','address','country','city','website','phone','email','status','pipeline_stage','created_at'];
             const rows = businesses.map(b => headers.map(h => {
                 const val = b[h];
                 if (val === null || val === undefined) return '';
@@ -843,9 +798,15 @@ const dbOperations = {
     }
 };
 
-// Initialize database on load
-initDatabase()
+// ---------------------------------------------------------------------------
+// Exported: dbReady is a promise that resolves when tables exist
+// ---------------------------------------------------------------------------
+const dbReady = initDatabase()
     .then(() => seedData())
-    .catch(err => console.error('Database initialization failed:', err));
+    .then(() => console.log('PostgreSQL database ready'))
+    .catch(err => {
+        console.error('FATAL: Database initialization failed:', err);
+        process.exit(1);
+    });
 
-module.exports = { pool, dbOperations };
+module.exports = { pool, dbOperations, dbReady };

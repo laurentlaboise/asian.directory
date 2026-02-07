@@ -1,0 +1,14 @@
+# Nixpacks configuration for asian.directory
+# Deploys from repo root, installs deps in backend/
+
+[phases.setup]
+nixPkgs = ['nodejs_18', 'npm-9_x']
+
+[phases.install]
+cmds = ['cd backend && npm ci --production']
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = 'cd backend && node server.js'

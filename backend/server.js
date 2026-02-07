@@ -15,7 +15,8 @@ const packageJson = require('./package.json');
 // Database auto-detection: PostgreSQL when DATABASE_URL is set, else SQLite
 // ---------------------------------------------------------------------------
 const USE_POSTGRES = !!process.env.DATABASE_URL;
-const { dbOperations } = require(USE_POSTGRES ? './database-postgres' : './database');
+const dbModule = require(USE_POSTGRES ? './database-postgres' : './database');
+const { dbOperations, dbReady } = dbModule;
 console.log(`Using database: ${USE_POSTGRES ? 'PostgreSQL' : 'SQLite'}`);
 
 // ---------------------------------------------------------------------------
@@ -1652,66 +1653,27 @@ app.use((err, req, res, _next) => {
 });
 
 // ---------------------------------------------------------------------------
-// Start server (only when run directly, not when imported for testing)
+// Start server: wait for database to be ready, THEN listen
 // ---------------------------------------------------------------------------
+async function startServer() {
+    try {
+        console.log('Waiting for database to be ready...');
+        await dbReady;
+        console.log('Database ready. Starting HTTP server...');
+
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`Asian Directory API running on port ${PORT}`);
+            console.log(`Health: http://localhost:${PORT}/api/health`);
+            console.log(`Database: ${USE_POSTGRES ? 'PostgreSQL' : 'SQLite'}`);
+        });
+    } catch (err) {
+        console.error('FATAL: Failed to start server:', err);
+        process.exit(1);
+    }
+}
+
 if (require.main === module) {
-    app.listen(PORT, () => {
-        console.log(`Asian Directory API server is running on port ${PORT}`);
-        console.log(`Health check: http://localhost:${PORT}/api/health`);
-        console.log(`Database: ${USE_POSTGRES ? 'PostgreSQL' : 'SQLite'}`);
-        console.log('');
-        console.log('API endpoints:');
-        console.log('  Auth:');
-        console.log('    POST /api/auth/register');
-        console.log('    POST /api/auth/login');
-        console.log('    GET  /api/auth/verify');
-        console.log('    GET  /api/auth/google');
-        console.log('    GET  /api/auth/facebook');
-        console.log('  Businesses:');
-        console.log('    GET    /api/businesses');
-        console.log('    GET    /api/businesses/search?q=query');
-        console.log('    GET    /api/businesses/categories');
-        console.log('    GET    /api/businesses/countries');
-        console.log('    GET    /api/businesses/stats (auth)');
-        console.log('    GET    /api/businesses/export?format=json|csv (auth)');
-        console.log('    GET    /api/businesses/:id');
-        console.log('    POST   /api/businesses (auth)');
-        console.log('    PUT    /api/businesses/:id (auth)');
-        console.log('    PATCH  /api/businesses/:id (auth)');
-        console.log('    DELETE /api/businesses/:id (auth)');
-        console.log('    POST   /api/businesses/bulk-pipeline (auth, admin/editor)');
-        console.log('  CRM:');
-        console.log('    GET  /api/crm/dashboard (auth, admin/editor)');
-        console.log('    GET  /api/crm/pipeline (auth)');
-        console.log('    GET  /api/crm/analytics?days=30 (auth, admin)');
-        console.log('    GET  /api/crm/audit-log (auth, admin)');
-        console.log('    POST /api/crm/communications (auth)');
-        console.log('    GET  /api/crm/communications/:businessId (auth)');
-        console.log('  Users:');
-        console.log('    GET   /api/users (auth, admin)');
-        console.log('    PATCH /api/users/:id/role (auth, admin)');
-        console.log('    PATCH /api/users/:id/active (auth, admin)');
-        console.log('  API Keys:');
-        console.log('    POST   /api/keys (auth)');
-        console.log('    GET    /api/keys (auth)');
-        console.log('    GET    /api/keys/all (auth, admin)');
-        console.log('    DELETE /api/keys/:id (auth)');
-        console.log('    GET    /api/keys/:id/usage (auth)');
-        console.log('  Tags:');
-        console.log('    POST   /api/tags (auth)');
-        console.log('    GET    /api/tags (auth)');
-        console.log('    POST   /api/tags/business/:businessId (auth)');
-        console.log('    DELETE /api/tags/business/:businessId/:tagId (auth)');
-        console.log('  Analytics:');
-        console.log('    POST /api/analytics/event');
-        console.log('  Conversations:');
-        console.log('    GET  /api/conversations');
-        console.log('    POST /api/conversations');
-        console.log('  Public API (v1, requires API key):');
-        console.log('    GET /api/v1/businesses');
-        console.log('    GET /api/v1/businesses/search?q=query');
-        console.log('    GET /api/v1/businesses/:id');
-    });
+    startServer();
 }
 
 // Export for testing

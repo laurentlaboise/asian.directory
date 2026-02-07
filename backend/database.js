@@ -828,8 +828,11 @@ const dbOperations = {
     }
 };
 
-// Initialize database on load
+// Initialize database on load (synchronous for SQLite)
 initDatabase();
 seedData();
 
-module.exports = { db, dbOperations };
+// Export a resolved promise for dbReady so server.js can use the same API
+const dbReady = Promise.resolve();
+
+module.exports = { db, dbOperations, dbReady };
