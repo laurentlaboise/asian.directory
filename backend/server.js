@@ -454,10 +454,15 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const userId = await dbOperations.createUser(username, hashedPassword, email || null, 'viewer', username);
+
+        // First user gets admin role automatically
+        const userCount = await dbOperations.getUserCount ? await dbOperations.getUserCount() : null;
+        const role = (userCount === 0) ? 'admin' : 'viewer';
+
+        const userId = await dbOperations.createUser(username, hashedPassword, email || null, role, username);
 
         const token = jwt.sign(
-            { id: userId, username, role: 'viewer' },
+            { id: userId, username, role },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -467,7 +472,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             message: 'User created successfully',
             userId,
             token,
-            user: { id: userId, username, role: 'viewer' }
+            user: { id: userId, username, role }
         });
     } catch (error) {
         console.error('Error creating user:', error);
@@ -518,7 +523,21 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         // Update last login
         await dbOperations.updateUserLogin(user.id);
 
-        const token = signToken(user);
+        // Auto-promote to admin if no admin exists yet
+        let role = user.role;
+        if (role !== 'admin' && dbOperations.getAdminCount) {
+            try {
+                const adminCount = await dbOperations.getAdminCount();
+                if (adminCount === 0) {
+                    await dbOperations.promoteToAdmin(user.id);
+                    role = 'admin';
+                    console.log(`Auto-promoted user ${user.username} to admin (no admins existed)`);
+                }
+            } catch (e) { console.error('Admin check failed:', e.message); }
+        }
+
+        const tokenUser = { ...user, role };
+        const token = signToken(tokenUser);
 
         res.json({
             success: true,
@@ -527,7 +546,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                role: user.role,
+                role,
                 display_name: user.display_name,
                 avatar_url: user.avatar_url
             }
@@ -1142,7 +1161,7 @@ app.get('/api/conversations', async (req, res) => {
 // ===========================================================================================
 
 // Dashboard stats
-app.get('/api/crm/dashboard', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+app.get('/api/crm/dashboard', authenticateToken, async (req, res) => {
     try {
         const stats = await dbOperations.getDashboardStats();
         res.json({ success: true, data: stats });
@@ -1155,15 +1174,11 @@ app.get('/api/crm/dashboard', authenticateToken, requireRole('admin', 'editor'),
 // Pipeline view (businesses grouped by pipeline stage)
 app.get('/api/crm/pipeline', authenticateToken, async (req, res) => {
     try {
-        const stages = ['new_lead', 'contacted', 'qualified', 'proposal', 'negotiation', 'active_listing', 'on_hold', 'lost', 'churned'];
+        const stages = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive'];
         const pipeline = {};
 
         for (const stage of stages) {
-            const businesses = await dbOperations.getAllBusinesses({ pipeline_stage: stage, limit: 50 });
-            pipeline[stage] = {
-                count: businesses.length,
-                businesses
-            };
+            pipeline[stage] = await dbOperations.getAllBusinesses({ pipeline_stage: stage, limit: 50 });
         }
 
         res.json({ success: true, data: pipeline });

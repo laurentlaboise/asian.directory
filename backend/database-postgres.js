@@ -602,6 +602,20 @@ const dbOperations = {
     },
 
     // ==================== USER OPERATIONS ====================
+    getUserCount: async () => {
+        const result = await pool.query('SELECT COUNT(*)::int as count FROM users');
+        return result.rows[0].count;
+    },
+
+    getAdminCount: async () => {
+        const result = await pool.query("SELECT COUNT(*)::int as count FROM users WHERE role = 'admin'");
+        return result.rows[0].count;
+    },
+
+    promoteToAdmin: async (userId) => {
+        await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [userId]);
+    },
+
     createUser: async (username, hashedPassword, email, role = 'viewer', displayName = null) => {
         try {
             const result = await pool.query(`

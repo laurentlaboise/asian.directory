@@ -277,7 +277,8 @@ function navigateTo(page) {
     currentPage = page;
     document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
     document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
-    document.getElementById('page-title').textContent = page.charAt(0).toUpperCase() + page.slice(1).replace('apikeys', 'API Keys');
+    const pageTitles = { dashboard: 'Dashboard', businesses: 'Businesses', pipeline: 'Pipeline', activities: 'Activities', automations: 'Automations', intelligence: 'Intelligence', users: 'Users', apikeys: 'API Keys', analytics: 'Analytics', audit: 'Audit Log' };
+    document.getElementById('page-title').textContent = pageTitles[page] || page.charAt(0).toUpperCase() + page.slice(1);
     document.getElementById('sidebar').classList.remove('open');
     renderPage(page);
 }
@@ -324,12 +325,12 @@ async function renderDashboard(el) {
     dashboardData = d;
 
     const statCards = [
-        { label: 'Total Businesses', value: d.businesses.total, color: 'yellow' },
-        { label: 'Active Listings', value: d.businesses.byStatus.find(s => s.status === 'active')?.count || 0, color: 'green' },
-        { label: 'Searches Today', value: d.conversations.today, color: 'blue' },
-        { label: 'Active API Keys', value: d.apiKeys.active, color: 'purple' },
-        { label: 'Total Users', value: d.users.total, color: 'pink' },
-        { label: 'Recent Activity', value: d.recentActivity, color: 'orange' },
+        { label: 'Total Businesses', value: d.businesses?.total || 0, color: 'yellow' },
+        { label: 'Active Listings', value: d.businesses?.byStatus?.find(s => s.status === 'active')?.count || 0, color: 'green' },
+        { label: 'Searches Today', value: d.conversations?.today || 0, color: 'blue' },
+        { label: 'Active API Keys', value: d.apiKeys?.active || 0, color: 'purple' },
+        { label: 'Total Users', value: d.users?.total || 0, color: 'pink' },
+        { label: 'Recent Activity', value: d.recentActivity || 0, color: 'orange' },
     ];
 
     const colorMap = { yellow: 'bg-yellow-400', green: 'bg-green-400', blue: 'bg-blue-400', purple: 'bg-purple-400', pink: 'bg-pink-400', orange: 'bg-orange-400' };
@@ -347,11 +348,11 @@ async function renderDashboard(el) {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 class="font-semibold mb-4">By Category</h3>
-                <div class="bar-chart space-y-2">${renderBarChart(d.businesses.byCategory, 'category', 'count', d.businesses.total)}</div>
+                <div class="bar-chart space-y-2">${renderBarChart(d.businesses?.byCategory, 'category', 'count', d.businesses?.total || 0)}</div>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 class="font-semibold mb-4">By Country</h3>
-                <div class="bar-chart space-y-2">${renderBarChart(d.businesses.byCountry, 'country', 'count', d.businesses.total)}</div>
+                <div class="bar-chart space-y-2">${renderBarChart(d.businesses?.byCountry, 'country', 'count', d.businesses?.total || 0)}</div>
             </div>
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
@@ -1188,11 +1189,11 @@ async function renderAnalytics(el) {
     el.innerHTML = `
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-3xl font-bold">${d.searchCount}</div>
+                <div class="text-3xl font-bold">${d.searchCount || 0}</div>
                 <div class="text-sm text-gray-500 mt-1">Searches (${days}d)</div>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-3xl font-bold">${d.pageViews}</div>
+                <div class="text-3xl font-bold">${d.pageViews || 0}</div>
                 <div class="text-sm text-gray-500 mt-1">Page Views (${days}d)</div>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
@@ -1204,7 +1205,7 @@ async function renderAnalytics(el) {
             <div class="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 class="font-semibold mb-4">Daily Searches</h3>
                 <div class="bar-chart space-y-1">${(d.dailySearches||[]).slice(-14).map(s => {
-                    const max = Math.max(...d.dailySearches.map(x=>parseInt(x.count)||0));
+                    const max = Math.max(...(d.dailySearches||[]).map(x=>parseInt(x.count)||0), 1);
                     const pct = max > 0 ? ((parseInt(s.count)||0)/max*100) : 0;
                     return `<div class="flex items-center gap-2"><span class="w-20 text-xs text-gray-500">${s.date?.substring(5)||''}</span><div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-4"><div class="bar bg-yellow-400 h-full rounded-full" style="width:${pct}%"></div></div><span class="w-6 text-xs">${s.count}</span></div>`;
                 }).join('')}</div>
@@ -1366,7 +1367,7 @@ async function init() {
         if (!verifyRes?.success) { logout(); return; }
 
         currentUser = verifyRes.user;
-        document.getElementById('user-display').textContent = currentUser.displayName || currentUser.username;
+        document.getElementById('user-display').textContent = currentUser.display_name || currentUser.username;
         document.getElementById('role-badge').textContent = currentUser.role;
         document.getElementById('role-badge').className = `badge badge-${currentUser.role}`;
 
