@@ -336,6 +336,7 @@ async function initDatabase() {
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_pipeline ON businesses(pipeline_stage)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_created ON businesses(created_at)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_name_lower ON businesses(LOWER(name))`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_geo ON businesses(latitude, longitude) WHERE latitude IS NOT NULL`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage(api_key_id)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at)`);

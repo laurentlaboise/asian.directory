@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "db:init": "node scripts/init-db.js",
+    "db:migrate": "node scripts/init-db.js"
   },
   "keywords": ["api", "database", "express", "crm", "directory", "asia"],
   "author": "",
