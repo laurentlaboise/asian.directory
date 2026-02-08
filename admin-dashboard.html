@@ -339,6 +339,35 @@
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     Location & Address
                 </div>
+
+                <!-- Google Maps Search (Place Autocomplete) -->
+                <div id="maps-search-container">
+                    <label class="form-label" for="form-place-search">
+                        Search Location
+                        <span class="form-tooltip">
+                            <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <span class="tooltip-text">Search for a business or address to auto-fill location fields and pin it on the map</span>
+                        </span>
+                    </label>
+                    <div class="relative">
+                        <input id="form-place-search" type="text" placeholder="Search for a place or address..." class="form-input pl-10" autocomplete="off">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </div>
+                    <p class="form-help" id="maps-status">
+                        <span id="maps-status-text">Loading Google Maps...</span>
+                    </p>
+                </div>
+
+                <!-- Map Preview -->
+                <div id="map-container" class="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700" style="height: 250px; background: #F3F4F6;">
+                    <div id="map-preview" style="width: 100%; height: 100%;"></div>
+                    <div id="map-placeholder" class="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
+                        <svg class="w-10 h-10 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+                        <p class="text-sm">Map preview will appear here</p>
+                        <p class="text-xs mt-1">Search a location or enter coordinates</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="form-label" for="form-country">Country <span class="required">*</span></label>
@@ -375,6 +404,23 @@
                         <label class="form-label" for="form-address">Street Address <span class="required">*</span></label>
                         <input id="form-address" required maxlength="200" placeholder="e.g., 1-22-7 Jinnan, Shibuya-ku" class="form-input">
                         <p class="form-help">Full street address for map display and directions</p>
+                    </div>
+                </div>
+
+                <!-- Coordinates & Google Place ID -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="form-label" for="form-latitude">Latitude</label>
+                        <input id="form-latitude" type="number" step="any" min="-90" max="90" placeholder="e.g., 35.6614" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-longitude">Longitude</label>
+                        <input id="form-longitude" type="number" step="any" min="-180" max="180" placeholder="e.g., 139.7005" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="form-place-id">Google Place ID</label>
+                        <input id="form-place-id" placeholder="Auto-filled from search" class="form-input" style="font-size:12px;">
+                        <p class="form-help">Auto-populated when using map search</p>
                     </div>
                 </div>
             </div>
@@ -1741,6 +1787,8 @@ function closeModal() {
     document.querySelectorAll('.char-counter').forEach(el => { el.classList.remove('warn', 'over'); });
     // Hide metadata
     document.getElementById('form-metadata').classList.add('hidden');
+    // Reset map
+    resetMap();
 }
 
 // Tab navigation
@@ -1782,6 +1830,247 @@ function initCharCounters() {
 }
 initCharCounters();
 
+// ==================== GOOGLE MAPS INTEGRATION ====================
+let gmMap = null;
+let gmMarker = null;
+let gmAutocomplete = null;
+let gmMapsLoaded = false;
+
+// Load Google Maps API dynamically
+async function loadGoogleMaps() {
+    try {
+        const configRes = await api('/config/maps');
+        if (!configRes?.success || !configRes.data?.enabled || !configRes.data?.apiKey) {
+            document.getElementById('maps-status-text').textContent = 'Google Maps not configured. Enter coordinates manually.';
+            document.getElementById('form-place-search').placeholder = 'Google Maps API key not set - enter address manually below';
+            document.getElementById('form-place-search').disabled = true;
+            return;
+        }
+
+        const apiKey = configRes.data.apiKey;
+
+        // Load the script
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=onGoogleMapsReady`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+            document.getElementById('maps-status-text').textContent = 'Failed to load Google Maps. Enter address manually.';
+            document.getElementById('form-place-search').disabled = true;
+        };
+        document.head.appendChild(script);
+    } catch (e) {
+        console.error('Failed to load Maps config:', e);
+        document.getElementById('maps-status-text').textContent = 'Maps unavailable. Enter address manually.';
+    }
+}
+
+// Called by Google Maps script callback
+window.onGoogleMapsReady = function() {
+    gmMapsLoaded = true;
+    document.getElementById('maps-status-text').textContent = 'Start typing to search for a business or address';
+    document.getElementById('form-place-search').disabled = false;
+    initMapAutocomplete();
+};
+
+function initMapAutocomplete() {
+    const input = document.getElementById('form-place-search');
+    if (!input || !window.google?.maps?.places) return;
+
+    gmAutocomplete = new google.maps.places.Autocomplete(input, {
+        types: ['establishment', 'geocode'],
+        fields: ['place_id', 'geometry', 'name', 'formatted_address', 'address_components', 'website', 'formatted_phone_number', 'opening_hours', 'international_phone_number']
+    });
+
+    gmAutocomplete.addListener('place_changed', () => {
+        const place = gmAutocomplete.getPlace();
+        if (!place.geometry) {
+            toast('No location found for this place', 'error');
+            return;
+        }
+
+        // Update lat/lng
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        document.getElementById('form-latitude').value = lat.toFixed(7);
+        document.getElementById('form-longitude').value = lng.toFixed(7);
+        document.getElementById('form-place-id').value = place.place_id || '';
+
+        // Update map
+        showMapAt(lat, lng, place.name || place.formatted_address);
+
+        // Auto-fill address fields from address_components
+        if (place.address_components) {
+            fillAddressFromComponents(place.address_components, place.formatted_address);
+        }
+
+        // Auto-fill phone from Google Places data
+        if (place.international_phone_number) {
+            const phoneField = document.getElementById('form-phone');
+            if (!phoneField.value) phoneField.value = place.international_phone_number;
+        }
+
+        // Auto-fill website from Google Places data
+        if (place.website) {
+            const webField = document.getElementById('form-website');
+            if (!webField.value) webField.value = place.website;
+        }
+
+        document.getElementById('maps-status-text').textContent = `Location set: ${place.name || place.formatted_address}`;
+    });
+}
+
+function fillAddressFromComponents(components, formattedAddress) {
+    let streetNumber = '';
+    let route = '';
+    let city = '';
+    let state = '';
+    let country = '';
+    let postalCode = '';
+
+    for (const comp of components) {
+        const types = comp.types;
+        if (types.includes('street_number')) streetNumber = comp.long_name;
+        else if (types.includes('route')) route = comp.long_name;
+        else if (types.includes('locality') || types.includes('sublocality_level_1')) city = comp.long_name;
+        else if (types.includes('administrative_area_level_1')) state = comp.long_name;
+        else if (types.includes('country')) country = comp.long_name;
+        else if (types.includes('postal_code')) postalCode = comp.long_name;
+    }
+
+    // Fill address - prefer formatted_address if street parts are missing
+    const streetAddr = streetNumber && route ? `${streetNumber} ${route}` : (formattedAddress || '');
+    const addrField = document.getElementById('form-address');
+    if (!addrField.value) addrField.value = streetAddr;
+
+    // Fill city
+    if (city) {
+        const cityField = document.getElementById('form-city');
+        if (!cityField.value) cityField.value = city;
+    }
+
+    // Fill state/province
+    if (state) {
+        const stateField = document.getElementById('form-state-province');
+        if (!stateField.value) stateField.value = state;
+    }
+
+    // Fill postal code
+    if (postalCode) {
+        const postalField = document.getElementById('form-postal-code');
+        if (!postalField.value) postalField.value = postalCode;
+    }
+
+    // Fill country - try to match dropdown option
+    if (country) {
+        const countryField = document.getElementById('form-country');
+        if (!countryField.value) {
+            // Map Google's country names to our dropdown values
+            const countryMap = {
+                'China': 'China', 'Hong Kong': 'Hong Kong',
+                'India': 'India', 'Indonesia': 'Indonesia',
+                'Japan': 'Japan', 'Malaysia': 'Malaysia',
+                'Philippines': 'Philippines', 'Singapore': 'Singapore',
+                'South Korea': 'South Korea', 'Korea': 'South Korea',
+                'Taiwan': 'Taiwan', 'Thailand': 'Thailand',
+                'Vietnam': 'Vietnam', 'Viet Nam': 'Vietnam'
+            };
+            countryField.value = countryMap[country] || 'Other';
+        }
+    }
+}
+
+function showMapAt(lat, lng, label) {
+    const container = document.getElementById('map-preview');
+    const placeholder = document.getElementById('map-placeholder');
+
+    if (!gmMapsLoaded || !window.google?.maps) {
+        // Fallback: show a static map image or just hide placeholder
+        placeholder?.classList.add('hidden');
+        return;
+    }
+
+    placeholder?.classList.add('hidden');
+    container.style.display = 'block';
+
+    if (!gmMap) {
+        gmMap = new google.maps.Map(container, {
+            center: { lat, lng },
+            zoom: 16,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: true,
+            zoomControl: true,
+            styles: [
+                { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }
+            ]
+        });
+
+        // Allow clicking on map to reposition marker
+        gmMap.addListener('click', (e) => {
+            const clickLat = e.latLng.lat();
+            const clickLng = e.latLng.lng();
+            document.getElementById('form-latitude').value = clickLat.toFixed(7);
+            document.getElementById('form-longitude').value = clickLng.toFixed(7);
+            showMapAt(clickLat, clickLng, 'Selected location');
+        });
+    } else {
+        gmMap.setCenter({ lat, lng });
+        gmMap.setZoom(16);
+    }
+
+    if (gmMarker) {
+        gmMarker.setPosition({ lat, lng });
+        gmMarker.setTitle(label || 'Business location');
+    } else {
+        gmMarker = new google.maps.Marker({
+            position: { lat, lng },
+            map: gmMap,
+            title: label || 'Business location',
+            draggable: true,
+            animation: google.maps.Animation.DROP
+        });
+
+        // When marker is dragged, update lat/lng fields
+        gmMarker.addListener('dragend', () => {
+            const pos = gmMarker.getPosition();
+            document.getElementById('form-latitude').value = pos.lat().toFixed(7);
+            document.getElementById('form-longitude').value = pos.lng().toFixed(7);
+        });
+    }
+}
+
+function resetMap() {
+    const placeholder = document.getElementById('map-placeholder');
+    if (placeholder) {
+        placeholder.classList.remove('hidden');
+    }
+    if (gmMarker) {
+        gmMarker.setMap(null);
+        gmMarker = null;
+    }
+    gmMap = null;
+    const container = document.getElementById('map-preview');
+    if (container) container.innerHTML = '';
+    const searchInput = document.getElementById('form-place-search');
+    if (searchInput) searchInput.value = '';
+}
+
+// Manual lat/lng entry => update map
+document.getElementById('form-latitude')?.addEventListener('change', () => {
+    const lat = parseFloat(document.getElementById('form-latitude').value);
+    const lng = parseFloat(document.getElementById('form-longitude').value);
+    if (!isNaN(lat) && !isNaN(lng)) showMapAt(lat, lng, 'Manual coordinates');
+});
+document.getElementById('form-longitude')?.addEventListener('change', () => {
+    const lat = parseFloat(document.getElementById('form-latitude').value);
+    const lng = parseFloat(document.getElementById('form-longitude').value);
+    if (!isNaN(lat) && !isNaN(lng)) showMapAt(lat, lng, 'Manual coordinates');
+});
+
+// Start loading Google Maps on page load
+loadGoogleMaps();
+
 // Helper: get values from checkbox group
 function getCheckboxValues(groupId) {
     return Array.from(document.querySelectorAll(`#${groupId} input:checked`)).map(cb => cb.value);
@@ -1809,6 +2098,8 @@ function openAddBusiness() {
     switchFormTab('tab-basic');
     // Reset char counters
     document.querySelectorAll('.char-counter .count').forEach(el => el.textContent = '0');
+    // Reset map
+    resetMap();
     openModal();
 }
 
@@ -1835,6 +2126,15 @@ async function openEditBusiness(id) {
     document.getElementById('form-city').value = b.city || '';
     document.getElementById('form-postal-code').value = b.postal_code || '';
     document.getElementById('form-address').value = b.address || '';
+    document.getElementById('form-latitude').value = b.latitude || '';
+    document.getElementById('form-longitude').value = b.longitude || '';
+    document.getElementById('form-place-id').value = b.google_place_id || '';
+    // Show location on map if coordinates exist
+    if (b.latitude && b.longitude) {
+        setTimeout(() => showMapAt(parseFloat(b.latitude), parseFloat(b.longitude), b.name || b.address), 100);
+    } else {
+        resetMap();
+    }
 
     // Tab 3: Contact
     document.getElementById('form-phone').value = b.phone || '';
@@ -1920,6 +2220,9 @@ document.getElementById('business-form').addEventListener('submit', async (e) =>
         city: fv('form-city'),
         postal_code: fv('form-postal-code'),
         address: document.getElementById('form-address').value,
+        latitude: document.getElementById('form-latitude').value ? parseFloat(document.getElementById('form-latitude').value) : null,
+        longitude: document.getElementById('form-longitude').value ? parseFloat(document.getElementById('form-longitude').value) : null,
+        google_place_id: fv('form-place-id'),
         // Contact
         phone: fv('form-phone'),
         alt_phone: fv('form-alt-phone'),

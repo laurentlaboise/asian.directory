@@ -41,6 +41,9 @@ const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 const FACEBOOK_CALLBACK_URL = process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:3000/api/auth/facebook/callback';
 
+// Google Maps API
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+
 // CORS origins
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
@@ -427,6 +430,19 @@ app.get('/api/health', (req, res) => {
         message: 'Asian Directory API is running',
         database: USE_POSTGRES ? 'postgresql' : 'sqlite',
         timestamp: new Date().toISOString()
+    });
+});
+
+// ===========================================================================================
+//  CLIENT CONFIG (public, non-sensitive configuration for frontend)
+// ===========================================================================================
+app.get('/api/config/maps', (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            apiKey: GOOGLE_MAPS_API_KEY || null,
+            enabled: !!GOOGLE_MAPS_API_KEY
+        }
     });
 });
 

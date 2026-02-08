@@ -55,6 +55,9 @@ function initDatabase() {
             state_province TEXT,
             city TEXT,
             postal_code TEXT,
+            latitude REAL,
+            longitude REAL,
+            google_place_id TEXT,
             website TEXT,
             phone TEXT,
             alt_phone TEXT,
@@ -97,6 +100,9 @@ function initDatabase() {
         ['business_type', 'TEXT'],
         ['state_province', 'TEXT'],
         ['postal_code', 'TEXT'],
+        ['latitude', 'REAL'],
+        ['longitude', 'REAL'],
+        ['google_place_id', 'TEXT'],
         ['alt_phone', 'TEXT'],
         ['contact_person_title', 'TEXT'],
         ['business_hours', 'TEXT'],
@@ -430,8 +436,8 @@ const dbOperations = {
 
     addBusiness: (business) => {
         const stmt = db.prepare(`
-            INSERT INTO businesses (name, business_type, category, description, address, country, state_province, city, postal_code, website, phone, alt_phone, email, contact_person, contact_person_title, business_hours, primary_language, year_established, employee_count, socials, keywords, meta_description, target_audience, special_offerings, status, verification_status, pipeline_stage, priority, source, notes, verification_notes, custom_fields, assigned_to, is_featured, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO businesses (name, business_type, category, description, address, country, state_province, city, postal_code, latitude, longitude, google_place_id, website, phone, alt_phone, email, contact_person, contact_person_title, business_hours, primary_language, year_established, employee_count, socials, keywords, meta_description, target_audience, special_offerings, status, verification_status, pipeline_stage, priority, source, notes, verification_notes, custom_fields, assigned_to, is_featured, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
@@ -439,6 +445,8 @@ const dbOperations = {
             business.category, business.description, business.address,
             business.country || null, business.state_province || null,
             business.city || null, business.postal_code || null,
+            business.latitude || null, business.longitude || null,
+            business.google_place_id || null,
             business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
             business.contact_person_title || null,
@@ -471,6 +479,7 @@ const dbOperations = {
             UPDATE businesses
             SET name = ?, business_type = ?, category = ?, description = ?, address = ?,
                 country = ?, state_province = ?, city = ?, postal_code = ?,
+                latitude = ?, longitude = ?, google_place_id = ?,
                 website = ?, phone = ?, alt_phone = ?, email = ?,
                 contact_person = ?, contact_person_title = ?,
                 business_hours = ?, primary_language = ?,
@@ -489,6 +498,8 @@ const dbOperations = {
             business.category, business.description, business.address,
             business.country || null, business.state_province || null,
             business.city || null, business.postal_code || null,
+            business.latitude || null, business.longitude || null,
+            business.google_place_id || null,
             business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
             business.contact_person_title || null,

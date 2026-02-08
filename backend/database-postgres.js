@@ -87,6 +87,9 @@ async function initDatabase() {
                 state_province TEXT,
                 city TEXT,
                 postal_code TEXT,
+                latitude DOUBLE PRECISION,
+                longitude DOUBLE PRECISION,
+                google_place_id TEXT,
                 website TEXT,
                 phone TEXT,
                 alt_phone TEXT,
@@ -126,6 +129,9 @@ async function initDatabase() {
             ['business_type', 'TEXT'],
             ['state_province', 'TEXT'],
             ['postal_code', 'TEXT'],
+            ['latitude', 'DOUBLE PRECISION'],
+            ['longitude', 'DOUBLE PRECISION'],
+            ['google_place_id', 'TEXT'],
             ['alt_phone', 'TEXT'],
             ['contact_person_title', 'TEXT'],
             ['business_hours', 'JSONB'],
@@ -519,14 +525,16 @@ const dbOperations = {
 
     addBusiness: async (business) => {
         const result = await pool.query(`
-            INSERT INTO businesses (name, business_type, category, description, address, country, state_province, city, postal_code, website, phone, alt_phone, email, contact_person, contact_person_title, business_hours, primary_language, year_established, employee_count, socials, keywords, meta_description, target_audience, special_offerings, status, verification_status, pipeline_stage, priority, source, notes, verification_notes, custom_fields, assigned_to, is_featured, created_by)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+            INSERT INTO businesses (name, business_type, category, description, address, country, state_province, city, postal_code, latitude, longitude, google_place_id, website, phone, alt_phone, email, contact_person, contact_person_title, business_hours, primary_language, year_established, employee_count, socials, keywords, meta_description, target_audience, special_offerings, status, verification_status, pipeline_stage, priority, source, notes, verification_notes, custom_fields, assigned_to, is_featured, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
             RETURNING id
         `, [
             business.name, business.business_type || null,
             business.category, business.description, business.address,
             business.country || null, business.state_province || null,
             business.city || null, business.postal_code || null,
+            business.latitude || null, business.longitude || null,
+            business.google_place_id || null,
             business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
             business.contact_person_title || null,
@@ -558,23 +566,26 @@ const dbOperations = {
             UPDATE businesses
             SET name=$1, business_type=$2, category=$3, description=$4, address=$5,
                 country=$6, state_province=$7, city=$8, postal_code=$9,
-                website=$10, phone=$11, alt_phone=$12, email=$13,
-                contact_person=$14, contact_person_title=$15,
-                business_hours=$16, primary_language=$17,
-                year_established=$18, employee_count=$19,
-                socials=$20, keywords=$21,
-                meta_description=$22, target_audience=$23, special_offerings=$24,
-                status=$25, verification_status=$26,
-                pipeline_stage=$27, priority=$28,
-                notes=$29, verification_notes=$30,
-                custom_fields=$31, assigned_to=$32, is_featured=$33,
+                latitude=$10, longitude=$11, google_place_id=$12,
+                website=$13, phone=$14, alt_phone=$15, email=$16,
+                contact_person=$17, contact_person_title=$18,
+                business_hours=$19, primary_language=$20,
+                year_established=$21, employee_count=$22,
+                socials=$23, keywords=$24,
+                meta_description=$25, target_audience=$26, special_offerings=$27,
+                status=$28, verification_status=$29,
+                pipeline_stage=$30, priority=$31,
+                notes=$32, verification_notes=$33,
+                custom_fields=$34, assigned_to=$35, is_featured=$36,
                 updated_at=NOW()
-            WHERE id=$34
+            WHERE id=$37
         `, [
             business.name, business.business_type || null,
             business.category, business.description, business.address,
             business.country || null, business.state_province || null,
             business.city || null, business.postal_code || null,
+            business.latitude || null, business.longitude || null,
+            business.google_place_id || null,
             business.website || null, business.phone || null, business.alt_phone || null,
             business.email || null, business.contact_person || null,
             business.contact_person_title || null,
