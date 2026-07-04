@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getBusinessBySlug, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
+import { safeHref } from "@/lib/validation";
+import { RequestContact } from "./RequestContact";
 
 export const revalidate = 3600;
 
@@ -67,6 +69,12 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
       <p className="mt-1 text-sm text-gray-500">
         {[b.category_name, b.city_name].filter(Boolean).join(" · ")}
       </p>
+      {b.trust_summary && (
+        <p className="mt-4 rounded-lg bg-yellow-50 p-3 text-sm text-gray-700">
+          <span className="font-medium">What people say: </span>
+          {b.trust_summary}
+        </p>
+      )}
       {b.description && <p className="mt-4 text-gray-700">{b.description}</p>}
       <dl className="mt-6 space-y-1 text-sm text-gray-600">
         {b.phone && (
@@ -75,11 +83,11 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
             <dd className="inline">{b.phone}</dd>
           </div>
         )}
-        {b.website && (
+        {safeHref(b.website) && (
           <div>
             <dt className="inline font-medium">Website: </dt>
             <dd className="inline">
-              <a href={b.website} rel="nofollow noopener noreferrer" target="_blank" className="text-yellow-600">
+              <a href={safeHref(b.website)} rel="nofollow noopener noreferrer" target="_blank" className="text-yellow-600">
                 {b.website}
               </a>
             </dd>
@@ -89,6 +97,10 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
           <div className="text-gray-400">★ {Number(b.review_score).toFixed(1)} ({b.review_count} reviews)</div>
         )}
       </dl>
+
+      <div className="mt-8">
+        <RequestContact businessId={b.id} businessName={b.name} cityId={b.city_id ?? null} />
+      </div>
     </main>
   );
 }

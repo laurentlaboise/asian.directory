@@ -84,6 +84,8 @@ create table businesses (
     review_score       real not null default 0,
     review_count       integer not null default 0,
     is_featured        boolean not null default false,
+    -- Listing lifecycle. Only 'active' businesses are discoverable in search / SEO / lead routing.
+    status             varchar(20) not null default 'active' check (status in ('active', 'pending', 'inactive', 'closed')),
     -- Lexical search: PGroonga indexes this directly and DOES tokenize Thai/Lao (no spaces).
     -- We do NOT use to_tsvector('english', ...) here — it would collapse Thai/Lao to one token.
     search_doc         text generated always as (coalesce(name,'') || ' ' || coalesce(description,'')) stored,
@@ -95,6 +97,7 @@ create table businesses (
 create index idx_biz_city       on businesses(city_id);
 create index idx_biz_category   on businesses(category_id);
 create index idx_biz_verified   on businesses(verification_tier);
+create index idx_biz_status     on businesses(status);
 -- PGroonga full-text index (handles Thai/Lao/Vietnamese/English uniformly):
 create index idx_biz_search_pgroonga on businesses using pgroonga (search_doc);
 -- Trigram fuzzy fallback on name (typos, partial business names):
@@ -178,7 +181,8 @@ create index idx_credit_txn_business on credit_transactions(business_id);
 -- Reciprocal Rank Fusion (ADR-002) — fuses dense (pgvector) + lexical (PGroonga) rankings.
 -- RRF consumes rank ORDER only, so incompatible score scales never need normalizing.
 --   query_embedding : BGE-M3 vector(1024) for the user query
---   query_text      : raw query string (PGroonga &@~ handles Thai/Lao tokenization)
+--   query_text      : raw query string; pgroonga_query_escape() neutralizes PGroonga query
+--                     syntax (parens/quotes/OR/-) so user input can't inject or crash the parse
 -- ---------------------------------------------------------------------------
 create or replace function hybrid_search(
     query_text       text,
@@ -203,7 +207,8 @@ as $$
                    be.embedding <=> query_embedding as dist
             from business_embeddings be
             join businesses b on b.id = be.business_id
-            where (filter_city_id is null or b.city_id = filter_city_id)
+            where b.status = 'active'
+              and (filter_city_id is null or b.city_id = filter_city_id)
             order by be.business_id, be.embedding <=> query_embedding
         ) d
         order by dist
@@ -213,7 +218,8 @@ as $$
         select b.id as business_id,
                row_number() over (order by pgroonga_score(tableoid, ctid) desc) as rank_ix
         from businesses b
-        where b.search_doc &@~ query_text
+        where b.status = 'active'
+          and b.search_doc &@~ pgroonga_query_escape(query_text)
           and (filter_city_id is null or b.city_id = filter_city_id)
         order by pgroonga_score(tableoid, ctid) desc
         limit least(match_count, 30) * 2

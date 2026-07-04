@@ -30,7 +30,8 @@ export function middleware(req: NextRequest) {
   ].join("; ");
 
   // Auth gate (must use the configured cookiePrefix, else the lookup always misses).
-  if (req.nextUrl.pathname.startsWith("/dashboard")) {
+  const pathname = req.nextUrl.pathname;
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
     const session = getSessionCookie(req, { cookiePrefix: "sead" });
     if (!session) {
       const url = new URL("/login", req.url);

@@ -33,6 +33,18 @@ const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   SEALION_BASE_URL: z.string().url().optional(),
   SEALION_API_KEY: z.string().optional(),
+
+  // Email sender for OTP delivery (Phase 2 verification). Optional in dev (codes are logged);
+  // required in production or Tier-1 verification fails closed.
+  MAIL_FROM: z.string().email().optional(),
+
+  // Phase 3 lead routing / monetization (ADR-005). Overridable without code changes.
+  CRON_SECRET: z.string().min(16).optional(),          // gates /api/cron/* (required to call it)
+  LEAD_DIRECT_MATCH_THRESHOLD: z.coerce.number().default(75), // >= => direct route to top business
+  LEAD_DIRECT_CREDIT_COST: z.coerce.number().int().default(3),
+  LEAD_POOL_CREDIT_COST: z.coerce.number().int().default(1),
+  LEAD_TTL_HOURS: z.coerce.number().int().default(24),
+  LEAD_POOL_SIZE: z.coerce.number().int().default(5),
   // Model ids kept in config so they can be bumped without a code change.
   LLM_ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
   LLM_GOOGLE_MODEL: z.string().default("gemini-2.5-flash"),
