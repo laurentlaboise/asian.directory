@@ -15,6 +15,11 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 | **SEC-7 Role/ownership gate on writes** *(enforced)* | Every protected write validates the server-side session AND authorization before mutating: `requireBusinessAccess()` gates all business edit/verification routes to the owner-or-admin; `requireRole()` gates role-scoped actions. Middleware stays an optimistic redirect only; the dashboard page re-checks server-side. | `lib/authz.ts`, `lib/session.ts`, `app/api/businesses/[id]/**`, `app/dashboard/page.tsx` |
 | **Tier-1 = real proof** | Verification now requires an OTP delivered to the business's **on-file** contact (not a caller-supplied address); codes are CSPRNG, stored **hashed+peppered**, single-use, expiring in 10 min, capped at 5 attempts, compared with `timingSafeEqual`. Tier-2/3 require admin-reviewed evidence. Claiming still assigns **ownership only** (never a tier). | `lib/otp.ts`, `app/api/businesses/[id]/verify/**` |
 | **Review abuse** | Reviews require auth, are rate-limited, **can't self-review** your own business, are unique per (business, author), and are held `pending` (never move aggregates until published). Basic spam screening flags links/spam for moderation (transformer detection later). | `app/api/businesses/[id]/reviews/route.ts`, `lib/moderation.ts` |
+| **Lead visibility** *(enforced)* | Merchants see only leads offered to their **own** businesses — row-scoped `where owner_id = $user` in SQL, never a client filter. Consumer contact details are withheld until the merchant **claims (pays for)** the lead; open/expired offers expose metadata only. | `app/api/merchant/leads/route.ts` |
+| **Atomic credit spend** | Claiming a lead debits credits under `SELECT … FOR UPDATE` on both the lead and the credit account in one transaction: balance is checked and debited atomically, the offer marked accepted, sibling pool offers expired, and the lead marked claimed exactly once. No double-spend / double-claim, no charge on failure. | `lib/leads.ts`, `app/api/leads/[id]/claim/route.ts` |
+| **Auth-event audit** *(added)* | Session creation (login) is recorded to `audit_log` via a Better Auth `databaseHooks.session.create.after` hook (best-effort, can't break auth). Claims, edits, verification, reviews, lead claim/won/lost, and credit top-ups are all audited. | `lib/auth.ts`, `lib/audit.ts` |
+| **Cron endpoint gating** | `/api/cron/expire-leads` requires a matching `x-cron-secret`; if `CRON_SECRET` is unset the endpoint is disabled (fails closed), never open. | `app/api/cron/expire-leads/route.ts` |
+| **Admin-only top-up** | Manual credit top-ups are gated by `requireRole('admin')` and fully audited with provider + reference (ADR-005 manual collection). | `app/api/admin/credits/topup/route.ts` |
 | **Claim race / double-claim** | Ownership transition runs under `SELECT … FOR UPDATE` in a transaction; a second concurrent claim sees the taken row and gets `409`. | `app/api/businesses/[id]/claim/route.ts` |
 | **Audit logging** | Security-relevant actions (claims now; auth events + lead claims as they land) append to `audit_log` via `logAudit()`, on a separate connection so it can't roll back the business op. | `lib/audit.ts`, `db/…/0002_auth_fks_audit.sql` |
 | **SEC-8 CSP disabled** | **Nonce-based CSP** (middleware) + HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`. | `middleware.ts`, `next.config.ts` |
@@ -26,13 +31,12 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 ## Still to do (tracked, not silently skipped)
 
 - Rate limiter is **in-memory** (single replica) — move to Redis/Upstash before horizontal scale.
-- **Lead-object visibility filters** — deferred to Phase 3 when leads exist. Reads must be
-  row-scoped so a merchant sees only leads routed to their own claimed businesses; reuse the
-  `requireBusinessAccess()` ownership check as the filter, never trust a client-supplied filter.
-- Extend `audit_log` to **auth events** (login/logout/failed-login via Better Auth hooks) — claim,
-  business edits, verification (sent/failed/tier1/submission), and reviews are already audited.
 - **Admin review surface** for Tier-2/3 `verification_submissions` and `pending` reviews (approve/
   reject → raise tier / publish + recompute aggregates). Admin-role-gated.
+- Extend auth audit to **logout / failed-login** (only session-create/login is hooked so far).
+- Async lead layer: move routing/expiry/escalation to **Inngest** (currently synchronous routing +
+  a cron-triggered expiry). Add the review-solicitation trigger on `lead.won`.
+- External notification channels (LINE/Zalo/SMS) remain deferred — Phase 0 entity blockers.
 - **Media upload**: reviews/evidence currently accept URLs; add signed-upload to object storage
   (R2/S3) with content-type + size limits before exposing publicly.
 - OTP delivery: wire a real email provider (`lib/mailer.ts` fails closed in prod until then).

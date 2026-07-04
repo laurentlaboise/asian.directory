@@ -75,7 +75,7 @@ migrated between `0001` and `0002` (the runner is idempotent, so re-running it i
 ```
 npm run db:migrate:core  # applies ONLY 0001 (domain tables + hybrid_search)
 npm run auth:migrate      # Better Auth creates user/session/account/verification  (add --config lib/auth.ts if needed)
-npm run db:migrate        # now applies 0002 (audit_log + FKs to "user")
+npm run db:migrate        # now applies 0002+ (audit/FKs, verification & reviews, leads)
 npm run db:seed           # ingests the Vientiane seed (needs EMBEDDINGS_URL live)
 ```
 (Running `db:migrate:core` first avoids 0002 failing on a fresh DB where `"user"` doesn't exist yet.)

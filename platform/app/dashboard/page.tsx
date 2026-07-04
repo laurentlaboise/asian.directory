@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getSessionUser } from "@/lib/session";
 import { pool } from "@/lib/db";
 import { MerchantPanel, type MerchantBusiness } from "./MerchantPanel";
+import { LeadsPanel } from "./LeadsPanel";
 
 export const dynamic = "force-dynamic"; // per-user, never cached
 
@@ -28,6 +29,9 @@ export default async function DashboardPage() {
       ) : (
         businesses.map((b) => <MerchantPanel key={b.id} business={b} />)
       )}
+
+      <h2 className="mt-6 text-xl font-bold">Leads</h2>
+      <LeadsPanel />
     </main>
   );
 }

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getBusinessBySlug, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
 import { safeHref } from "@/lib/validation";
+import { RequestContact } from "./RequestContact";
 
 export const revalidate = 3600;
 
@@ -90,6 +91,10 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
           <div className="text-gray-400">★ {Number(b.review_score).toFixed(1)} ({b.review_count} reviews)</div>
         )}
       </dl>
+
+      <div className="mt-8">
+        <RequestContact businessName={b.name} cityId={b.city_id ?? null} />
+      </div>
     </main>
   );
 }

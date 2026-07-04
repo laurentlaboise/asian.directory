@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { env } from "./env";
 import { pool } from "./db";
+import { logAudit } from "./audit";
 
 /**
  * Better Auth (ADR-006). Owns the identity tables (`user`, `session`, `account`,
@@ -30,6 +31,17 @@ export const auth = betterAuth({
     defaultCookieAttributes: {
       httpOnly: true,
       sameSite: "lax",
+    },
+  },
+  // Auth-event audit (queued security item): record each session creation (login). logAudit is
+  // best-effort and swallows its own errors, so it can never break authentication.
+  databaseHooks: {
+    session: {
+      create: {
+        after: async (session: { userId: string }) => {
+          await logAudit({ userId: session.userId, action: "auth.login", entityType: "user", entityId: session.userId });
+        },
+      },
     },
   },
   // Social/OIDC providers (LINE custom-OIDC, Zalo OAuth2) are added in a later phase — see ADR-004.
