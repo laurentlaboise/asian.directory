@@ -1,13 +1,40 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "startCommand": "cd backend && node server.js",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10,
-    "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 60
-  }
+    "$schema": "https://railway.app/railway.schema.json",
+    "build": {
+          "builder": "DOCKERFILE",
+          "dockerfilePath": "Dockerfile"
+    },
+    "deploy": {
+          "numReplicas": 1,
+          "sleepApplication": false,
+          "restartPolicyType": "ON_FAILURE",
+          "restartPolicyMaxRetries": 10
+    },
+    "services": {
+          "db": {
+                  "source": {
+                            "repo": "https://github.com/laurentlaboise/asian.directory",
+                            "rootDirectory": ".",
+                            "dockerfilePath": "platform/db/Dockerfile"
+                  },
+                  "variables": {
+                            "POSTGRES_USER": "postgres",
+                            "POSTGRES_DB": "railway"
+                  }
+          },
+          "app": {
+                  "source": {
+                            "repo": "https://github.com/laurentlaboise/asian.directory",
+                            "rootDirectory": ".",
+                            "dockerfilePath": "Dockerfile"
+                  },
+                  "dependsOn": ["db"],
+                  "variables": {
+                            "NODE_ENV": "production",
+                            "DATABASE_URL": "${{db.DATABASE_URL}}",
+                            "DATABASE_SSL": "off",
+                            "BETTER_AUTH_SECRET": "${{RAILWAY_SERVICE_app_BETTER_AUTH_SECRET}}"
+                  }
+          }
+    }
 }
