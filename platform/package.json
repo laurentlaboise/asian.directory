@@ -12,7 +12,8 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:migrate:core": "node scripts/migrate.mjs 0001_init.sql",
     "db:seed": "tsx scripts/seed.ts",
-    "auth:migrate": "npx --yes @better-auth/cli migrate"
+    "auth:migrate": "npx --yes @better-auth/cli migrate",
+    "boot-check": "node scripts/boot-check.mjs"
   },
   "dependencies": {
     "next": "^15.1.0",
