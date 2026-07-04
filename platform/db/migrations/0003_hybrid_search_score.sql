@@ -28,7 +28,8 @@ as $$
                    be.embedding <=> query_embedding as dist
             from business_embeddings be
             join businesses b on b.id = be.business_id
-            where (filter_city_id is null or b.city_id = filter_city_id)
+            where b.status = 'active'
+              and (filter_city_id is null or b.city_id = filter_city_id)
             order by be.business_id, be.embedding <=> query_embedding
         ) d
         order by dist
@@ -38,7 +39,8 @@ as $$
         select b.id as business_id,
                row_number() over (order by pgroonga_score(tableoid, ctid) desc) as rank_ix
         from businesses b
-        where b.search_doc &@~ pgroonga_query_escape(query_text)
+        where b.status = 'active'
+          and b.search_doc &@~ pgroonga_query_escape(query_text)
           and (filter_city_id is null or b.city_id = filter_city_id)
         order by pgroonga_score(tableoid, ctid) desc
         limit least(match_count, 30) * 2
