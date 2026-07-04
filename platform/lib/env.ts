@@ -16,6 +16,8 @@ const schema = z.object({
 
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET must be >= 32 chars"),
   BETTER_AUTH_URL: z.string().url(),
+  // Public origin for canonical/SEO URLs (falls back to BETTER_AUTH_URL if unset).
+  SITE_URL: z.string().url().optional(),
 
   EMBEDDINGS_URL: z.string().url(),
   EMBEDDINGS_API_KEY: z.string().optional(),

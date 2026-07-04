@@ -6,7 +6,7 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 
 | Original finding | Control in this scaffold | Where |
 |---|---|---|
-| **SEC-1 Stored XSS** (unescaped `innerHTML` everywhere) | UI renders data as React **text nodes** only — no `innerHTML`/`dangerouslySetInnerHTML`. **Nonce-based CSP** (no `script-src 'unsafe-inline'`) as defense-in-depth. | `app/page.tsx`, `middleware.ts` |
+| **SEC-1 Stored XSS** (unescaped `innerHTML` everywhere) | UI renders data as React **text nodes**. The only `dangerouslySetInnerHTML` is JSON-LD, injected as **escaped** (`<`→`<`) non-executable data carrying the CSP nonce (`lib/jsonld.ts`). **Nonce-based CSP** (no `script-src 'unsafe-inline'`) as defense-in-depth. | `app/page.tsx`, SEO pages, `middleware.ts` |
 | **SEC-2 Hardcoded secret fallback** | `lib/env.ts` **fails closed** — no default for any secret; process throws at import if missing/short. | `lib/env.ts` |
 | **SEC-3 Privilege-escalation bootstrap** (open register + auto-promote to admin) | Roles live in `profiles` (default `viewer`); no self-promotion path. Admin granted out-of-band. Auth handled by Better Auth, not hand-rolled. | `db/…/0001_init.sql`, `lib/auth.ts` |
 | **SEC-4 Token in `localStorage` / URL** | Sessions are **httpOnly, secure, sameSite** cookies via Better Auth — not readable by JS, not placed in URLs. | `lib/auth.ts` |
