@@ -7,8 +7,8 @@
 --   ADR-002  lexical search = native FTS + RRF; Thai/Lao via PGroonga (no spaces -> no tsvector).
 --   ADR-006  Target: self-managed Postgres on RAILWAY (not hosted Supabase). We control the
 --            image, so pgvector + PGroonga are guaranteed and true BM25 (ParadeDB pg_search)
---            is available later if wanted. Auth is app-layer (Better Auth / Auth.js), so this
---            schema owns its own `users` table instead of referencing Supabase's `auth.users`.
+--            is available later if wanted. Auth is app-layer (Better Auth), which owns the
+--            identity tables (`user`/`session`/`account`/`verification`) via its own CLI.
 -- Requires a Postgres image with pgvector + PGroonga (e.g. groonga/pgroonga + pgvector, or a
 -- custom image). Run via Railway on deploy, or `psql "$DATABASE_URL" -f 0001_init.sql`.
 -- =============================================================================
@@ -22,16 +22,17 @@ create extension if not exists pgroonga;    -- CJK/Thai/Lao tokenizing full-text
 -- Optional later: create extension if not exists pg_search;  -- ParadeDB BM25 (needs shared_preload_libraries)
 
 -- ---------------------------------------------------------------------------
--- Users — owned by this schema (populated by the app's auth library: Better Auth / Auth.js,
--- or a self-hosted GoTrue). Kept minimal; the auth library may extend it.
+-- Identity: Better Auth OWNS the `user`, `session`, `account`, `verification` tables —
+-- created by `npx @better-auth/cli migrate` (see lib/auth.ts), NOT this file. Better Auth
+-- user ids are text. Application role/state lives in `profiles`, keyed to that id. Domain
+-- FKs below use `text` soft references to the auth user id (a hard FK is added in a later
+-- migration, once the Better Auth tables exist, to avoid create-time ordering coupling).
 -- ---------------------------------------------------------------------------
-create table users (
-    id           uuid primary key default gen_random_uuid(),
-    email        text unique,
-    display_name text,
-    role         text not null default 'viewer' check (role in ('viewer','merchant','editor','admin')),
-    is_active    boolean not null default true,
-    created_at   timestamptz not null default now()
+create table profiles (
+    user_id     text primary key,               -- = Better Auth user.id
+    role        text not null default 'viewer' check (role in ('viewer','merchant','editor','admin')),
+    is_active   boolean not null default true,
+    created_at  timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ create table cities (
 -- ---------------------------------------------------------------------------
 create table businesses (
     id                 uuid primary key default gen_random_uuid(),
-    owner_id           uuid references users(id) on delete set null,
+    owner_id           text,                       -- Better Auth user.id (soft ref; hard FK in 0002)
     name               varchar(255) not null,
     slug               varchar(255) unique not null,
     description        text,
@@ -122,7 +123,7 @@ create index idx_biz_emb_hnsw on business_embeddings
 create table leads (
     id               uuid primary key default gen_random_uuid(),
     query_session_id uuid not null,
-    user_id          uuid references users(id) on delete set null,
+    user_id          text,                           -- Better Auth user.id (soft ref; hard FK in 0002)
     intent_score     integer not null default 0 check (intent_score between 0 and 100),
     service_requested text,
     budget_hint      varchar(50),
