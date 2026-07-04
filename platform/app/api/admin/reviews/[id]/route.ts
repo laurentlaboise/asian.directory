@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { pool } from "@/lib/db";
 import { requireRole } from "@/lib/authz";
@@ -46,6 +46,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     if (body.action === "approve") {
+      // Serialize on the BUSINESS row before recompute so two concurrent approves of sibling
+      // reviews for the same business can't each recompute from a stale snapshot (aggregate drift).
+      await client.query("select 1 from businesses where id = $1 for update", [rev.rows[0].business_id]);
       await client.query("update reviews set status = 'published' where id = $1", [p.data.id]);
       await recomputeBusinessRating(client, rev.rows[0].business_id);
       publishedBusinessId = rev.rows[0].business_id;
@@ -70,8 +73,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     client.release();
   }
 
-  // Best-effort, outside the transaction (LLM call) — a failure here must not undo the publish.
-  if (publishedBusinessId) await generateTrustSummary(publishedBusinessId);
+  // Regenerate the trust summary AFTER the response is sent (after()), so the admin request isn't
+  // blocked on an LLM round-trip; it's best-effort and swallows its own errors.
+  if (publishedBusinessId) {
+    const bId = publishedBusinessId;
+    after(() => generateTrustSummary(bId));
+  }
 
   return NextResponse.json({ success: true });
 }

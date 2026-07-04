@@ -61,7 +61,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     try {
       await pool.query(
         `insert into review_solicitations (lead_id, business_id, consumer_email)
-         select $1, $2, contact_email from leads where id = $1`,
+         select $1, $2, contact_email from leads where id = $1
+         on conflict (lead_id) where lead_id is not null do nothing`,
         [p.data.id, body.businessId],
       );
     } catch (err) {

@@ -18,3 +18,5 @@ create table if not exists review_solicitations (
 );
 create index if not exists idx_solicit_business on review_solicitations(business_id);
 create index if not exists idx_solicit_status on review_solicitations(status) where status = 'pending';
+-- Defense-in-depth: at most one solicitation per lead (any future re-mark-won path is idempotent).
+create unique index if not exists uq_solicit_lead on review_solicitations(lead_id) where lead_id is not null;
