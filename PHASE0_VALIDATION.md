@@ -16,6 +16,7 @@
 | Synthesis LLM | SEA-LION v3.5 (hosted) | **Claude/Gemini primary + self-hosted SEA-LION (v4, 8B-class) fallback** | Hosted SEA-LION API = 10 req/min, no SLA, not safety-aligned. v3.5 already superseded by v4 |
 | Notifications | LINE + Zalo from day one | **Phase-3 feature; LINE-first (unverified OA), SMS as true fallback, drop WhatsApp** | Zalo needs a VN entity; WhatsApp has ~0 TH/VN adoption |
 | Payments | credit purchases (Stripe implied) | **Manual BCEL/LAO-QR + admin-credited ledger; PhaJay API later** | Stripe unavailable in Laos & Vietnam; local B2B pays by bank QR |
+| Hosting / DB | Supabase | **Railway** (self-managed Postgres + pgvector + PGroonga) + app-layer auth | Already in use; controls the image (guarantees PGroonga, unlocks BM25); managed-auth loss is minor for LINE/Zalo |
 
 **Net effect on the roadmap:** Phase 1 (discovery engine) is fully unblocked. The hardest external dependencies (Vietnamese legal entity, Thai verified-OA badge, VN SMS brand registration, payment rails) are all **Phase 3** concerns — but three of them have multi-week lead times and must be *initiated* during Phase 1.
 
@@ -110,6 +111,25 @@ Metadata pre-filters (city, category, verification tier) belong **inside the CTE
 
 ---
 
+## ADR-006 — Hosting & platform: Railway over Supabase
+
+**Decision:** Host on **Railway** (already in use for another site) with a **self-managed Postgres image carrying pgvector + PGroonga**. Replace Supabase's managed auth with an **app-layer auth library (Better Auth / Auth.js)** in Next.js; self-hosting GoTrue on Railway is the fallback if RLS-with-JWT is wanted. This **supersedes the Supabase assumption** in ADR-001/002 (the SQL is portable — pgvector, PGroonga, FTS, and RRF are plain Postgres).
+
+**Rationale:**
+- **We control the Postgres image**, so pgvector + PGroonga are guaranteed and **true BM25 (ParadeDB `pg_search`) becomes available** — the one thing hosted Supabase blocked (revises ADR-002's constraint; BM25 stays deferred but is now a config choice, not an impossibility).
+- **Operational consolidation** — one vendor already in use; no new managed service, no Supabase project to run alongside Railway.
+- **The only thing given up is managed auth**, and for our providers that advantage was already thin: **LINE omits the OIDC `userinfo_endpoint` and Zalo is plain OAuth2** — both required custom wiring on Supabase too (ADR-004). So we lose little and simplify the stack.
+
+**Consequences / what changed in the seed:**
+- Schema owns its own `users` table (no `auth.users` FK); `owner_id`/`user_id` reference it.
+- **RLS is not enabled** — authorization is enforced in the app layer, connecting as a least-privileged DB role. (Re-enable RLS + `auth.uid()` policies only if self-hosting GoTrue.)
+- Migrations apply via `psql`/a Railway release step (or node-pg-migrate/drizzle-kit), not the Supabase CLI.
+- **Caution:** use a vetted auth library — do **not** hand-roll JWT auth (that path produced the original `asian.directory` backend's worst issues: hardcoded secret fallback, privilege-escalation bootstrap).
+
+**New decision for the human:** auth approach — **Better Auth/Auth.js (recommended, lower ops)** vs **self-hosted GoTrue** (keeps RLS model, more ops).
+
+---
+
 ## Critical-path / long-pole dependencies (start during Phase 1)
 
 | Dependency | Lead time | Needed for | Start when |
@@ -132,3 +152,4 @@ Metadata pre-filters (city, category, verification tier) belong **inside the CTE
 1. **Is Vietnam in the MVP, or Laos+Thailand first?** VN's notification + payment stack is gated on a Vietnamese entity; deferring VN removes the single biggest external blocker.
 2. **Do you have (or can you partner for) a Thai entity?** Determines LINE verified badge + native Stripe-TH later.
 3. **Primary synthesis LLM preference** — Claude vs Gemini vs self-hosted-only (cost/latency/data-residency tradeoff).
+4. **Auth approach (ADR-006)** — Better Auth/Auth.js (recommended, lower ops) vs self-hosted GoTrue (keeps RLS).

@@ -5,15 +5,34 @@
 -- Corrections vs the master spec baked into this migration:
 --   ADR-001  embedding is vector(1024) (BGE-M3), NOT vector(3072) — HNSW caps at 2000 dims.
 --   ADR-002  lexical search = native FTS + RRF; Thai/Lao via PGroonga (no spaces -> no tsvector).
--- Target: hosted Supabase Postgres. Types live in the `extensions` schema there.
+--   ADR-006  Target: self-managed Postgres on RAILWAY (not hosted Supabase). We control the
+--            image, so pgvector + PGroonga are guaranteed and true BM25 (ParadeDB pg_search)
+--            is available later if wanted. Auth is app-layer (Better Auth / Auth.js), so this
+--            schema owns its own `users` table instead of referencing Supabase's `auth.users`.
+-- Requires a Postgres image with pgvector + PGroonga (e.g. groonga/pgroonga + pgvector, or a
+-- custom image). Run via Railway on deploy, or `psql "$DATABASE_URL" -f 0001_init.sql`.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- Extensions
+-- Extensions (installable because we control the Postgres image on Railway)
 -- ---------------------------------------------------------------------------
 create extension if not exists vector;      -- pgvector (dense semantic search)
 create extension if not exists pg_trgm;     -- trigram fuzzy fallback
 create extension if not exists pgroonga;    -- CJK/Thai/Lao tokenizing full-text (ADR-002)
+-- Optional later: create extension if not exists pg_search;  -- ParadeDB BM25 (needs shared_preload_libraries)
+
+-- ---------------------------------------------------------------------------
+-- Users — owned by this schema (populated by the app's auth library: Better Auth / Auth.js,
+-- or a self-hosted GoTrue). Kept minimal; the auth library may extend it.
+-- ---------------------------------------------------------------------------
+create table users (
+    id           uuid primary key default gen_random_uuid(),
+    email        text unique,
+    display_name text,
+    role         text not null default 'viewer' check (role in ('viewer','merchant','editor','admin')),
+    is_active    boolean not null default true,
+    created_at   timestamptz not null default now()
+);
 
 -- ---------------------------------------------------------------------------
 -- Hierarchical taxonomy (drives programmatic SEO: /[location]/[category]/[modifier])
@@ -48,7 +67,7 @@ create table cities (
 -- ---------------------------------------------------------------------------
 create table businesses (
     id                 uuid primary key default gen_random_uuid(),
-    owner_id           uuid references auth.users(id) on delete set null,
+    owner_id           uuid references users(id) on delete set null,
     name               varchar(255) not null,
     slug               varchar(255) unique not null,
     description        text,
@@ -103,7 +122,7 @@ create index idx_biz_emb_hnsw on business_embeddings
 create table leads (
     id               uuid primary key default gen_random_uuid(),
     query_session_id uuid not null,
-    user_id          uuid references auth.users(id) on delete set null,
+    user_id          uuid references users(id) on delete set null,
     intent_score     integer not null default 0 check (intent_score between 0 and 100),
     service_requested text,
     budget_hint      varchar(50),
@@ -202,14 +221,8 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Row Level Security (enable; policies added with the auth/merchant-portal migration)
--- ---------------------------------------------------------------------------
-alter table businesses          enable row level security;
-alter table business_embeddings enable row level security;
-alter table leads               enable row level security;
-alter table lead_interactions   enable row level security;
-alter table credit_accounts     enable row level security;
-alter table credit_transactions enable row level security;
-
--- Public read of businesses (directory is public); writes gated to owner/admin in 0002.
-create policy businesses_public_read on businesses for select using (true);
+-- Authorization note (ADR-006): with app-layer auth (Better Auth / Auth.js) rather than
+-- Supabase GoTrue, there is no in-Postgres `auth.uid()`, so we do NOT enable RLS here —
+-- the application layer (Next.js route handlers / service) enforces ownership + role checks,
+-- connecting as a least-privileged DB role. If you instead self-host GoTrue and want RLS,
+-- re-enable it in 0002 and add `auth.uid()`-based policies. The directory itself is public-read.
