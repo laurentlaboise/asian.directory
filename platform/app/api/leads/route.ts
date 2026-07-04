@@ -14,6 +14,7 @@ const Body = z.object({
   contactName: z.string().trim().min(1).max(120),
   contactEmail: z.string().email().max(200),
   message: z.string().trim().max(2000).optional(),
+  targetBusinessId: z.string().uuid().optional(), // set when contacting a specific business profile
 });
 
 /**
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
       contactName: body.contactName,
       contactEmail: body.contactEmail,
       message: body.message ?? null,
+      targetBusinessId: body.targetBusinessId ?? null,
     });
     return NextResponse.json({ success: true, leadId: res.leadId, routed: res.routed });
   } catch (err) {

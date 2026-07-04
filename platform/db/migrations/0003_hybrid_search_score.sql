@@ -38,7 +38,7 @@ as $$
         select b.id as business_id,
                row_number() over (order by pgroonga_score(tableoid, ctid) desc) as rank_ix
         from businesses b
-        where b.search_doc &@~ query_text
+        where b.search_doc &@~ pgroonga_query_escape(query_text)
           and (filter_city_id is null or b.city_id = filter_city_id)
         order by pgroonga_score(tableoid, ctid) desc
         limit least(match_count, 30) * 2

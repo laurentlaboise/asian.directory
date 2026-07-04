@@ -178,7 +178,8 @@ create index idx_credit_txn_business on credit_transactions(business_id);
 -- Reciprocal Rank Fusion (ADR-002) — fuses dense (pgvector) + lexical (PGroonga) rankings.
 -- RRF consumes rank ORDER only, so incompatible score scales never need normalizing.
 --   query_embedding : BGE-M3 vector(1024) for the user query
---   query_text      : raw query string (PGroonga &@~ handles Thai/Lao tokenization)
+--   query_text      : raw query string; pgroonga_query_escape() neutralizes PGroonga query
+--                     syntax (parens/quotes/OR/-) so user input can't inject or crash the parse
 -- ---------------------------------------------------------------------------
 create or replace function hybrid_search(
     query_text       text,
@@ -213,7 +214,7 @@ as $$
         select b.id as business_id,
                row_number() over (order by pgroonga_score(tableoid, ctid) desc) as rank_ix
         from businesses b
-        where b.search_doc &@~ query_text
+        where b.search_doc &@~ pgroonga_query_escape(query_text)
           and (filter_city_id is null or b.city_id = filter_city_id)
         order by pgroonga_score(tableoid, ctid) desc
         limit least(match_count, 30) * 2

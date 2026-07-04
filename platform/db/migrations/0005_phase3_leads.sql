@@ -14,7 +14,7 @@ alter table leads add column if not exists expires_at    timestamptz;
 
 -- Find expirable leads cheaply (pool/notified past their window).
 create index if not exists idx_leads_expiring on leads(expires_at)
-    where status in ('opportunity_pool', 'notified', 'auto_routed');
+    where status in ('generated', 'opportunity_pool', 'notified', 'auto_routed');
 
 -- One business can only be offered a given lead once (idempotent routing / no double-charge path).
 create unique index if not exists uq_lead_interaction_pair on lead_interactions(lead_id, business_id);

@@ -18,6 +18,8 @@ export type LeadInput = {
   contactName: string;
   contactEmail: string;
   message?: string | null;
+  /** When set (profile "request contact"), route directly to this business, not a name-match pool. */
+  targetBusinessId?: string | null;
 };
 
 export type RouteResult =
@@ -32,34 +34,46 @@ export type RouteResult =
 export async function createAndRoute(input: LeadInput): Promise<RouteResult> {
   const intent = await classifyIntent(input.query);
 
-  // Candidate businesses: active, in-city (if known), lexically matching the service, best-trust first.
-  const candidates = (
-    await pool.query(
-      `select b.id, b.verification_tier, b.lat, b.lng,
-              (select avg(extract(epoch from (li.responded_at - li.created_at)) / 60)
-                 from lead_interactions li
-                where li.business_id = b.id and li.responded_at is not null) as avg_resp_min
-       from businesses b
-       where b.status = 'active'
-         and ($1::int is null or b.city_id = $1)
-         and b.search_doc &@~ $2
-       order by b.verification_tier desc, b.review_score desc
-       limit $3`,
-      [input.cityId ?? null, intent.service_requested, env.LEAD_POOL_SIZE],
-    )
-  ).rows as { id: string; verification_tier: number; lat: number | null; lng: number | null; avg_resp_min: number | null }[];
+  type Cand = { id: string; verification_tier: number; lat: number | null; lng: number | null; avg_resp_min: number | null };
+  const respSub = `(select avg(extract(epoch from (li.responded_at - li.created_at)) / 60)
+                      from lead_interactions li where li.business_id = b.id and li.responded_at is not null)`;
+  const scoreRow = (c: Cand) =>
+    totalScore({
+      intentStrength: intent.intent_strength,
+      proximity: proximityScore(haversineKm(input.geoLat ?? null, input.geoLng ?? null, c.lat, c.lng)),
+      verification: verificationScore(c.verification_tier),
+      responsiveness: responsivenessScore(c.avg_resp_min == null ? null : Number(c.avg_resp_min)),
+    });
 
-  const scored = candidates
-    .map((c) => ({
-      id: c.id,
-      score: totalScore({
-        intentStrength: intent.intent_strength,
-        proximity: proximityScore(haversineKm(input.geoLat ?? null, input.geoLng ?? null, c.lat, c.lng)),
-        verification: verificationScore(c.verification_tier),
-        responsiveness: responsivenessScore(c.avg_resp_min == null ? null : Number(c.avg_resp_min)),
-      }),
-    }))
-    .sort((a, b) => b.score - a.score);
+  let scored: { id: string; score: number }[];
+  let forceDirect = false;
+
+  if (input.targetBusinessId) {
+    // Consumer asked to contact THIS business — route directly to it, never to name-match competitors.
+    const t = (
+      await pool.query(
+        `select b.id, b.verification_tier, b.lat, b.lng, ${respSub} as avg_resp_min
+         from businesses b where b.id = $1 and b.status = 'active'`,
+        [input.targetBusinessId],
+      )
+    ).rows[0] as Cand | undefined;
+    scored = t ? ((forceDirect = true), [{ id: t.id, score: scoreRow(t) }]) : [];
+  } else {
+    // PGroonga query-escape the derived service phrase so its syntax chars can't inject/crash the parse.
+    const candidates = (
+      await pool.query(
+        `select b.id, b.verification_tier, b.lat, b.lng, ${respSub} as avg_resp_min
+         from businesses b
+         where b.status = 'active'
+           and ($1::int is null or b.city_id = $1)
+           and b.search_doc &@~ pgroonga_query_escape($2)
+         order by b.verification_tier desc, b.review_score desc
+         limit $3`,
+        [input.cityId ?? null, intent.service_requested, env.LEAD_POOL_SIZE],
+      )
+    ).rows as Cand[];
+    scored = candidates.map((c) => ({ id: c.id, score: scoreRow(c) })).sort((a, b) => b.score - a.score);
+  }
 
   const top = scored[0];
   const client = await pool.connect();
@@ -84,7 +98,7 @@ export async function createAndRoute(input: LeadInput): Promise<RouteResult> {
         input.contactEmail,
         input.message ?? null,
         top?.id ?? null,
-        top ? (top.score >= env.LEAD_DIRECT_MATCH_THRESHOLD ? "auto_routed" : "opportunity_pool") : "generated",
+        top ? (forceDirect || top.score >= env.LEAD_DIRECT_MATCH_THRESHOLD ? "auto_routed" : "opportunity_pool") : "generated",
         env.LEAD_TTL_HOURS,
       ],
     );
@@ -95,7 +109,7 @@ export async function createAndRoute(input: LeadInput): Promise<RouteResult> {
       return { routed: false, leadId };
     }
 
-    if (top.score >= env.LEAD_DIRECT_MATCH_THRESHOLD) {
+    if (forceDirect || top.score >= env.LEAD_DIRECT_MATCH_THRESHOLD) {
       await client.query(
         `insert into lead_interactions (lead_id, business_id, notification_channel, credit_cost)
          values ($1, $2, 'dashboard', $3) on conflict (lead_id, business_id) do nothing`,
@@ -223,7 +237,12 @@ export async function claimLead(leadId: string, businessId: string): Promise<Cla
   }
 }
 
-/** Expire leads past their window (called by the cron route). Returns the number expired. */
+/**
+ * Expire leads past their window (called by the cron route). Unclaimed leads (incl. no-match
+ * 'generated' ones) are expired AND their consumer PII is redacted — nobody paid to receive it,
+ * so it shouldn't linger. Claimed/won/lost leads are untouched (the merchant paid for the contact).
+ * Returns the number of leads expired.
+ */
 export async function expireStaleLeads(): Promise<number> {
   await pool.query(
     `update lead_interactions set interaction_status = 'expired'
@@ -231,8 +250,10 @@ export async function expireStaleLeads(): Promise<number> {
        and lead_id in (select id from leads where expires_at < now())`,
   );
   const r = await pool.query(
-    `update leads set status = 'expired'
-     where expires_at < now() and status in ('auto_routed', 'opportunity_pool', 'notified')`,
+    `update leads
+        set status = 'expired', contact_name = null, contact_email = null, message = null
+      where expires_at < now()
+        and status in ('generated', 'auto_routed', 'opportunity_pool', 'notified')`,
   );
   return r.rowCount ?? 0;
 }

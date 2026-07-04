@@ -93,7 +93,7 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
       </dl>
 
       <div className="mt-8">
-        <RequestContact businessName={b.name} cityId={b.city_id ?? null} />
+        <RequestContact businessId={b.id} businessName={b.name} cityId={b.city_id ?? null} />
       </div>
     </main>
   );

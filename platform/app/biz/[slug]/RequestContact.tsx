@@ -2,8 +2,17 @@
 
 import { useState } from "react";
 
-/** Consumer "request contact / quote" form on a business profile — generates a routed lead. */
-export function RequestContact({ businessName, cityId }: { businessName: string; cityId: number | null }) {
+/** Consumer "request contact / quote" form on a business profile — generates a lead routed
+ *  DIRECTLY to this business (targetBusinessId), never re-derived from its name. */
+export function RequestContact({
+  businessId,
+  businessName,
+  cityId,
+}: {
+  businessId: string;
+  businessName: string;
+  cityId: number | null;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -18,6 +27,7 @@ export function RequestContact({ businessName, cityId }: { businessName: string;
       body: JSON.stringify({
         query: businessName,
         cityId: cityId ?? undefined,
+        targetBusinessId: businessId,
         contactName: name,
         contactEmail: email,
         message: message || undefined,
