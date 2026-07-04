@@ -11,7 +11,8 @@ export type ImportOutcome = {
   error?: string;
 };
 
-const shortHash = (s: string) => createHash("sha1").update(s).digest("hex").slice(0, 8);
+// 12 hex = 48 bits — negligible birthday-collision risk even at large scale.
+const shortHash = (s: string) => createHash("sha1").update(s).digest("hex").slice(0, 12);
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 180);
@@ -49,8 +50,10 @@ export async function importRecord(rec: ImportRecord): Promise<ImportOutcome> {
       [rec.category.slug, rec.category.name_en],
     );
 
-    const base = [slugify(rec.name), rec.city.slug].filter(Boolean).join("-") || "biz";
-    const slug = `${base}-${shortHash(`${rec.source}:${rec.externalId}`)}`.slice(0, 240);
+    // Cap the base BEFORE appending the hash so the disambiguator is never truncated away
+    // (name+city could otherwise exceed the column width and drop the hash → false collisions).
+    const base = ([slugify(rec.name), rec.city.slug].filter(Boolean).join("-") || "biz").slice(0, 200);
+    const slug = `${base}-${shortHash(`${rec.source}:${rec.externalId}`)}`;
 
     // xmax = 0 distinguishes a fresh insert from an on-conflict update.
     const res = await client.query(

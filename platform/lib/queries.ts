@@ -58,7 +58,7 @@ export const getBusinessBySlug = cache(async (slug: string) => {
      from businesses b
      left join cities c      on c.id = b.city_id
      left join categories cat on cat.id = b.category_id
-     where b.slug = $1`,
+     where b.slug = $1 and b.status = 'active'`,
     [slug],
   );
   return r.rows[0] ?? null;
