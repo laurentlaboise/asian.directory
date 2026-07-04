@@ -58,26 +58,45 @@ export async function importRecord(rec: ImportRecord): Promise<ImportOutcome> {
     // xmax = 0 distinguishes a fresh insert from an on-conflict update.
     const res = await client.query(
       `insert into businesses
-         (name, slug, description, category_id, city_id, lat, lng, phone, website, status, source, external_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         (name, slug, description, category_id, city_id, lat, lng, phone, website, status, source, external_id,
+          business_type, address, socials, keywords, year_established, employee_count, business_hours, meta_description)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        on conflict (source, external_id) where external_id is not null do update set
          name = excluded.name, description = excluded.description, category_id = excluded.category_id,
          city_id = excluded.city_id, lat = excluded.lat, lng = excluded.lng, phone = excluded.phone,
-         website = excluded.website, status = excluded.status, updated_at = now()
+         website = excluded.website, status = excluded.status,
+         business_type = excluded.business_type, address = excluded.address, socials = excluded.socials,
+         keywords = excluded.keywords, year_established = excluded.year_established,
+         employee_count = excluded.employee_count, business_hours = excluded.business_hours,
+         meta_description = excluded.meta_description, updated_at = now()
        returning id, (xmax = 0) as inserted`,
       [
         rec.name, slug, rec.description ?? null, category.rows[0].id, city.rows[0].id,
         rec.lat ?? null, rec.lng ?? null, rec.phone ?? null, rec.website ?? null,
         rec.status, rec.source, rec.externalId,
+        rec.businessType ?? null, rec.address ?? null,
+        JSON.stringify(rec.socials ?? {}), JSON.stringify(rec.keywords ?? []),
+        rec.yearEstablished ?? null, rec.employeeCount ?? null,
+        rec.businessHours ? JSON.stringify(rec.businessHours) : null, rec.metaDescription ?? null,
       ],
     );
     const businessId: string = res.rows[0].id;
     const inserted: boolean = res.rows[0].inserted;
 
+    // Richer embedding text (name + type + description + address + keywords) improves semantic recall.
+    const enriched = [
+      rec.name,
+      rec.businessType,
+      rec.description,
+      rec.address,
+      (rec.keywords ?? []).join(", ") || undefined,
+    ]
+      .filter(Boolean)
+      .join(". ");
     const langs =
       rec.translations && rec.translations.length > 0
         ? rec.translations
-        : [{ lang: rec.primaryLanguage, text: `${rec.name}. ${rec.description ?? ""}`.trim() }];
+        : [{ lang: rec.primaryLanguage, text: enriched }];
 
     for (const l of langs) {
       const embedding = await embedText(l.text);

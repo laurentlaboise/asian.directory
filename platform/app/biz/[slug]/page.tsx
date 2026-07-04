@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getBusinessBySlug, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
 import { safeHref } from "@/lib/validation";
+import { socialLinks } from "@/lib/socials";
 import { RequestContact } from "./RequestContact";
 
 export const revalidate = 3600;
@@ -67,7 +68,7 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
         )}
       </div>
       <p className="mt-1 text-sm text-gray-500">
-        {[b.category_name, b.city_name].filter(Boolean).join(" · ")}
+        {[b.business_type || b.category_name, b.city_name].filter(Boolean).join(" · ")}
       </p>
       {b.trust_summary && (
         <p className="mt-4 rounded-lg bg-yellow-50 p-3 text-sm text-gray-700">
@@ -75,13 +76,15 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
           {b.trust_summary}
         </p>
       )}
-      {b.description && <p className="mt-4 text-gray-700">{b.description}</p>}
+      {(b.description || b.meta_description) && (
+        <p className="mt-4 text-gray-700">{b.description || b.meta_description}</p>
+      )}
       <dl className="mt-6 space-y-1 text-sm text-gray-600">
+        {b.address && (
+          <div><dt className="inline font-medium">Address: </dt><dd className="inline">{b.address}</dd></div>
+        )}
         {b.phone && (
-          <div>
-            <dt className="inline font-medium">Phone: </dt>
-            <dd className="inline">{b.phone}</dd>
-          </div>
+          <div><dt className="inline font-medium">Phone: </dt><dd className="inline">{b.phone}</dd></div>
         )}
         {safeHref(b.website) && (
           <div>
@@ -93,10 +96,43 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
             </dd>
           </div>
         )}
+        {b.year_established && (
+          <div><dt className="inline font-medium">Established: </dt><dd className="inline">{b.year_established}</dd></div>
+        )}
+        {b.employee_count && (
+          <div><dt className="inline font-medium">Employees: </dt><dd className="inline">{b.employee_count}</dd></div>
+        )}
         {b.review_count > 0 && (
           <div className="text-gray-400">★ {Number(b.review_score).toFixed(1)} ({b.review_count} reviews)</div>
         )}
       </dl>
+
+      {Array.isArray(b.keywords) && b.keywords.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(b.keywords as string[]).map((k) => (
+            <span key={k} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{k}</span>
+          ))}
+        </div>
+      )}
+
+      {socials.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          {socials.map((s) => (
+            <a key={s.platform} href={s.url} target="_blank" rel="nofollow noopener noreferrer" className="text-yellow-600">
+              {s.label}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {b.business_hours && typeof b.business_hours === "object" && (
+        <div className="mt-4 text-sm text-gray-600">
+          <p className="font-medium">Hours</p>
+          {Object.entries(b.business_hours as Record<string, string>).map(([day, hrs]) => (
+            <div key={day} className="capitalize">{day}: {hrs}</div>
+          ))}
+        </div>
+      )}
 
       <div className="mt-8">
         <RequestContact businessId={b.id} businessName={b.name} cityId={b.city_id ?? null} />
