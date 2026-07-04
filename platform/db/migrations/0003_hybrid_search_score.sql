@@ -49,6 +49,6 @@ as $$
     from semantic s
     full outer join lexical l on s.business_id = l.business_id
     join businesses b on b.id = coalesce(s.business_id, l.business_id)
-    order by score desc
+    order by score desc, b.id   -- deterministic tiebreak (stable order on equal RRF scores)
     limit least(match_count, 30);
 $$;

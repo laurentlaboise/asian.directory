@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { getCity, getCategory, getBusinessesByLocationCategory, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
@@ -42,7 +41,6 @@ export default async function LocationCategoryPage({ params }: { params: Promise
   const list = await getBusinessesByLocationCategory(location, category);
   if (list.length === 0) notFound(); // no content -> 404, never a thin page
 
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const avg = list.reduce((s, b) => s + Number(b.review_score), 0) / list.length;
 
   const jsonLd = {
@@ -72,7 +70,9 @@ export default async function LocationCategoryPage({ params }: { params: Promise
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
+      {/* JSON-LD is non-executable data (type=application/ld+json), so it needs no CSP nonce;
+          omitting headers() keeps this page statically generated / ISR-cacheable. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
       <h1 className="text-2xl font-bold">
         {cat.name_en} in {city.name_en}
       </h1>

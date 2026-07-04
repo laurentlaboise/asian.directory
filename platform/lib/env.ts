@@ -23,8 +23,10 @@ const schema = z.object({
   EMBEDDINGS_API_KEY: z.string().optional(),
 
   // Below this fused RRF score the top result is treated as a weak match -> confidence fallback.
-  // Heuristic; tune against real data once the corpus is populated.
-  SEARCH_CONFIDENCE_MIN: z.coerce.number().default(0.02),
+  // Scale note: with rrf_k=50, score maxes at ~0.039 (rank-1 in BOTH lists); rank-1 in a single
+  // list is ~0.0196. Default sits just under single-list rank-1 so genuine one-modality hits are
+  // NOT flagged. Heuristic — tune against real data once the corpus is populated.
+  SEARCH_CONFIDENCE_MIN: z.coerce.number().default(0.01),
 
   LLM_PRIMARY: z.enum(["anthropic", "google"]).default("anthropic"),
   ANTHROPIC_API_KEY: z.string().optional(),

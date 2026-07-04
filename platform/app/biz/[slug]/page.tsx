@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { getBusinessBySlug, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
@@ -26,8 +25,6 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
   const { slug } = await params;
   const b = await getBusinessBySlug(slug);
   if (!b) notFound();
-
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -59,7 +56,8 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
-      <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
+      {/* JSON-LD is inert data — no CSP nonce needed; keeps the page ISR-cacheable. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold">{b.name}</h1>
         {b.verification_tier >= 2 && (

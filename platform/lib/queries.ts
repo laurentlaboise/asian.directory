@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { pool } from "@/lib/db";
 import { env } from "@/lib/env";
 
@@ -16,40 +17,41 @@ export type SeoBusiness = {
   lng: number | null;
 };
 
-export async function getCity(slug: string) {
+// Wrapped in React cache() so generateMetadata + the page body share one query per request
+// (no double DB hit within a single render).
+export const getCity = cache(async (slug: string) => {
   const r = await pool.query(
     "select id, slug, name_en, name_local, country from cities where slug = $1",
     [slug],
   );
   return r.rows[0] ?? null;
-}
+});
 
-export async function getCategory(slug: string) {
+export const getCategory = cache(async (slug: string) => {
   const r = await pool.query(
     "select id, slug, name_en, name_lo from categories where slug = $1",
     [slug],
   );
   return r.rows[0] ?? null;
-}
+});
 
-export async function getBusinessesByLocationCategory(
-  citySlug: string,
-  categorySlug: string,
-): Promise<SeoBusiness[]> {
-  const r = await pool.query(
-    `select b.id, b.name, b.slug, b.description, b.review_score, b.review_count,
-            b.verification_tier, b.lat, b.lng
-     from businesses b
-     join cities c    on c.id = b.city_id     and c.slug = $1
-     join categories cat on cat.id = b.category_id and cat.slug = $2
-     order by b.is_featured desc, b.review_score desc, b.review_count desc
-     limit 100`,
-    [citySlug, categorySlug],
-  );
-  return r.rows;
-}
+export const getBusinessesByLocationCategory = cache(
+  async (citySlug: string, categorySlug: string): Promise<SeoBusiness[]> => {
+    const r = await pool.query(
+      `select b.id, b.name, b.slug, b.description, b.review_score, b.review_count,
+              b.verification_tier, b.lat, b.lng
+       from businesses b
+       join cities c    on c.id = b.city_id     and c.slug = $1
+       join categories cat on cat.id = b.category_id and cat.slug = $2
+       order by b.is_featured desc, b.review_score desc, b.review_count desc
+       limit 100`,
+      [citySlug, categorySlug],
+    );
+    return r.rows;
+  },
+);
 
-export async function getBusinessBySlug(slug: string) {
+export const getBusinessBySlug = cache(async (slug: string) => {
   const r = await pool.query(
     `select b.*, c.name_en as city_name, c.country, cat.name_en as category_name
      from businesses b
@@ -59,4 +61,4 @@ export async function getBusinessBySlug(slug: string) {
     [slug],
   );
   return r.rows[0] ?? null;
-}
+});

@@ -26,15 +26,20 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const turnsRef = useRef(turns);
   turnsRef.current = turns;
+  const busyRef = useRef(false);
 
   async function ask(e: React.FormEvent) {
     e.preventDefault();
     const query = q.trim();
-    if (query.length < 2 || busy) return;
+    // Synchronous ref guard: `busy` state lags a render, so two fast submits could both pass.
+    if (query.length < 2 || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setQ("");
 
     const history = turnsRef.current.filter((t) => t.role === "user").map((t) => t.text);
+    // Capture THIS turn's assistant index so callbacks never write into a later turn.
+    const assistantIndex = turnsRef.current.length + 1;
     setTurns((t) => [...t, { role: "user", text: query }, { role: "assistant", text: "" }]);
 
     try {
@@ -67,15 +72,15 @@ export default function Home() {
       // attach cards immediately so they render while the sentence streams
       setTurns((t) => {
         const next = [...t];
-        next[next.length - 1] = { role: "assistant", text: "", results, lowConfidence };
+        next[assistantIndex] = { role: "assistant", text: "", results, lowConfidence };
         return next;
       });
 
       const streamP = streamAssistant(query, results.length, lowConfidence, (chunk) => {
         setTurns((t) => {
           const next = [...t];
-          const last = next[next.length - 1]!;
-          next[next.length - 1] = { ...last, text: last.text + chunk };
+          const last = next[assistantIndex]!;
+          next[assistantIndex] = { ...last, text: last.text + chunk };
           return next;
         });
       });
@@ -83,20 +88,21 @@ export default function Home() {
       const [rationales] = await Promise.all([rationalesP, streamP]);
       setTurns((t) => {
         const next = [...t];
-        const last = next[next.length - 1]!;
-        next[next.length - 1] = { ...last, rationales: rationales as Record<string, string> };
+        const last = next[assistantIndex]!;
+        next[assistantIndex] = { ...last, rationales: rationales as Record<string, string> };
         return next;
       });
     } catch (err) {
       setTurns((t) => {
         const next = [...t];
-        next[next.length - 1] = {
+        next[assistantIndex] = {
           role: "assistant",
           text: err instanceof Error ? err.message : "Something went wrong.",
         };
         return next;
       });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -189,4 +195,6 @@ async function streamAssistant(
     if (done) break;
     onChunk(decoder.decode(value, { stream: true }));
   }
+  const tail = decoder.decode(); // flush any trailing multibyte (CJK/Lao) sequence
+  if (tail) onChunk(tail);
 }
