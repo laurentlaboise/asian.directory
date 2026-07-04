@@ -20,6 +20,10 @@ const schema = z.object({
   EMBEDDINGS_URL: z.string().url(),
   EMBEDDINGS_API_KEY: z.string().optional(),
 
+  // Below this fused RRF score the top result is treated as a weak match -> confidence fallback.
+  // Heuristic; tune against real data once the corpus is populated.
+  SEARCH_CONFIDENCE_MIN: z.coerce.number().default(0.02),
+
   LLM_PRIMARY: z.enum(["anthropic", "google"]).default("anthropic"),
   ANTHROPIC_API_KEY: z.string().optional(),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),

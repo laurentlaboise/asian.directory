@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type Business = {
   id: string;
@@ -12,42 +12,141 @@ type Business = {
   verification_tier: number;
 };
 
-export default function Home() {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<Business[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Turn = {
+  role: "user" | "assistant";
+  text: string;
+  results?: Business[];
+  rationales?: Record<string, string>;
+  lowConfidence?: boolean;
+};
 
-  async function search(e: React.FormEvent) {
+export default function Home() {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const turnsRef = useRef(turns);
+  turnsRef.current = turns;
+
+  async function ask(e: React.FormEvent) {
     e.preventDefault();
-    if (q.trim().length < 2) return;
-    setLoading(true);
-    setError(null);
+    const query = q.trim();
+    if (query.length < 2 || busy) return;
+    setBusy(true);
+    setQ("");
+
+    const history = turnsRef.current.filter((t) => t.role === "user").map((t) => t.text);
+    setTurns((t) => [...t, { role: "user", text: query }, { role: "assistant", text: "" }]);
+
     try {
-      const res = await fetch("/api/search", {
+      // 1) Retrieve (with multi-turn history) — returns results + confidence.
+      const searchRes = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q }),
+        body: JSON.stringify({ q: query, history }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Search failed");
-      setResults(data.results ?? []);
+      const search = await searchRes.json();
+      if (!searchRes.ok) throw new Error(search.error ?? "Search failed");
+      const results: Business[] = search.results ?? [];
+      const usedQuery: string = search.query ?? query;
+      const lowConfidence: boolean = !!search.lowConfidence;
+
+      // 2) In parallel: stream the lead-in, and fetch grounded rationales.
+      const rationalesP = results.length
+        ? fetch("/api/synthesis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ q: usedQuery, ids: results.map((r) => r.id) }),
+          })
+            .then((r) => (r.ok ? r.json() : { rationales: [] }))
+            .then((d: { rationales: { id: string; rationale: string }[] }) =>
+              Object.fromEntries(d.rationales.map((x) => [x.id, x.rationale])),
+            )
+            .catch(() => ({}))
+        : Promise.resolve({});
+
+      // attach cards immediately so they render while the sentence streams
+      setTurns((t) => {
+        const next = [...t];
+        next[next.length - 1] = { role: "assistant", text: "", results, lowConfidence };
+        return next;
+      });
+
+      const streamP = streamAssistant(query, results.length, lowConfidence, (chunk) => {
+        setTurns((t) => {
+          const next = [...t];
+          const last = next[next.length - 1]!;
+          next[next.length - 1] = { ...last, text: last.text + chunk };
+          return next;
+        });
+      });
+
+      const [rationales] = await Promise.all([rationalesP, streamP]);
+      setTurns((t) => {
+        const next = [...t];
+        const last = next[next.length - 1]!;
+        next[next.length - 1] = { ...last, rationales: rationales as Record<string, string> };
+        return next;
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
-      setResults([]);
+      setTurns((t) => {
+        const next = [...t];
+        next[next.length - 1] = {
+          role: "assistant",
+          text: err instanceof Error ? err.message : "Something went wrong.",
+        };
+        return next;
+      });
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-16">
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
       <header className="text-center">
-        <h1 className="text-4xl font-bold">SEA Directory</h1>
-        <p className="mt-2 text-gray-500">Find businesses in Southeast Asia by simply asking.</p>
+        <h1 className="text-3xl font-bold">SEA Directory</h1>
+        <p className="mt-1 text-sm text-gray-500">Find businesses in Southeast Asia by simply asking.</p>
       </header>
 
-      <form onSubmit={search} className="flex gap-2">
+      <div className="flex flex-1 flex-col gap-6">
+        {turns.map((turn, i) =>
+          turn.role === "user" ? (
+            <div key={i} className="self-end rounded-2xl bg-yellow-400 px-4 py-2 text-gray-900">
+              {turn.text}
+            </div>
+          ) : (
+            <div key={i} className="flex flex-col gap-3">
+              <p className="text-gray-700">{turn.text || <span className="text-gray-400">…</span>}</p>
+              {turn.results && turn.results.length > 0 && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {turn.results.map((b) => (
+                    <article key={b.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <h2 className="font-semibold text-yellow-600">{b.name}</h2>
+                        {b.verification_tier >= 2 && (
+                          <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">Verified</span>
+                        )}
+                      </div>
+                      {turn.rationales?.[b.id] && (
+                        <p className="mt-1 text-sm italic text-gray-500">“{turn.rationales[b.id]}”</p>
+                      )}
+                      {b.description && <p className="mt-1 text-sm text-gray-600">{b.description}</p>}
+                      <p className="mt-2 text-xs text-gray-400">
+                        ★ {b.review_score.toFixed(1)} ({b.review_count})
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {turn.results && turn.results.length === 0 && (
+                <p className="text-sm text-gray-400">No matching businesses yet.</p>
+              )}
+            </div>
+          ),
+        )}
+      </div>
+
+      <form onSubmit={ask} className="sticky bottom-4 flex gap-2 bg-gray-50 pt-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -57,33 +156,37 @@ export default function Home() {
         />
         <button
           type="submit"
-          disabled={loading}
+          disabled={busy}
           className="rounded-lg bg-yellow-400 px-5 py-3 font-medium text-gray-900 disabled:opacity-50"
         >
-          {loading ? "Searching…" : "Search"}
+          {busy ? "…" : "Ask"}
         </button>
       </form>
-
-      {error && <p className="text-red-600">{error}</p>}
-
-      {/* Results render as React text nodes — never innerHTML — so business content
-          cannot inject markup/script. This closes the stored-XSS class by construction. */}
-      <ul className="flex flex-col gap-3">
-        {results.map((b) => (
-          <li key={b.id} className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-yellow-600">{b.name}</h2>
-              {b.verification_tier >= 2 && (
-                <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">Verified</span>
-              )}
-            </div>
-            {b.description && <p className="mt-1 text-sm text-gray-600">{b.description}</p>}
-            <p className="mt-2 text-xs text-gray-400">
-              ★ {b.review_score.toFixed(1)} ({b.review_count})
-            </p>
-          </li>
-        ))}
-      </ul>
     </main>
   );
+}
+
+/** Read the streamed lead-in sentence token-by-token from /api/assistant. */
+async function streamAssistant(
+  q: string,
+  count: number,
+  lowConfidence: boolean,
+  onChunk: (s: string) => void,
+): Promise<void> {
+  const res = await fetch("/api/assistant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ q, count, lowConfidence }),
+  });
+  if (!res.ok || !res.body) {
+    onChunk(count > 0 ? "Here's what I found:" : "I couldn't find a strong match.");
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onChunk(decoder.decode(value, { stream: true }));
+  }
 }
