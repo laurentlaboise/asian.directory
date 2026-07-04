@@ -55,5 +55,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     ip: clientIp(req.headers),
   });
 
+  // Closed-loop data quality (spec §7.4): a won deal enqueues a review request to the consumer.
+  // Best-effort — never fail the outcome update on this. Delivery (email/LINE/Zalo) wires later.
+  if (body.outcome === "won") {
+    try {
+      await pool.query(
+        `insert into review_solicitations (lead_id, business_id, consumer_email)
+         select $1, $2, contact_email from leads where id = $1`,
+        [p.data.id, body.businessId],
+      );
+    } catch (err) {
+      console.error("review solicitation enqueue failed (non-fatal):", err);
+    }
+  }
+
   return NextResponse.json({ success: true });
 }

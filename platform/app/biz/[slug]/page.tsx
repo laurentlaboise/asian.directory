@@ -69,6 +69,12 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
       <p className="mt-1 text-sm text-gray-500">
         {[b.category_name, b.city_name].filter(Boolean).join(" · ")}
       </p>
+      {b.trust_summary && (
+        <p className="mt-4 rounded-lg bg-yellow-50 p-3 text-sm text-gray-700">
+          <span className="font-medium">What people say: </span>
+          {b.trust_summary}
+        </p>
+      )}
       {b.description && <p className="mt-4 text-gray-700">{b.description}</p>}
       <dl className="mt-6 space-y-1 text-sm text-gray-600">
         {b.phone && (

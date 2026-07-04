@@ -20,6 +20,8 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 | **Auth-event audit** *(added)* | Session creation (login) is recorded to `audit_log` via a Better Auth `databaseHooks.session.create.after` hook (best-effort, can't break auth). Claims, edits, verification, reviews, lead claim/won/lost, and credit top-ups are all audited. | `lib/auth.ts`, `lib/audit.ts` |
 | **Cron endpoint gating** | `/api/cron/expire-leads` requires a matching `x-cron-secret`; if `CRON_SECRET` is unset the endpoint is disabled (fails closed), never open. | `app/api/cron/expire-leads/route.ts` |
 | **Admin-only top-up** | Manual credit top-ups are gated by `requireRole('admin')` and fully audited with provider + reference (ADR-005 manual collection). | `app/api/admin/credits/topup/route.ts` |
+| **Admin moderation** *(enforced)* | Verification approval and review publishing are `requireRole('admin')`-gated and processed under a `FOR UPDATE` row lock (no double-processing). Verification approval raises `verification_tier` monotonically; review publish recomputes rating aggregates **in the same transaction** so they can't drift from the moderated set. `/admin` is server-role-checked (middleware only optimistic). | `app/api/admin/**`, `app/admin/page.tsx`, `lib/ratings.ts` |
+| **Grounded trust summary** | The Semantic Trust Summary is generated ONLY from a business's published reviews (no invented detail), regenerated best-effort on publish outside the transaction, and rendered as React text. | `lib/trust-summary.ts`, `app/biz/[slug]/page.tsx` |
 | **Claim race / double-claim** | Ownership transition runs under `SELECT … FOR UPDATE` in a transaction; a second concurrent claim sees the taken row and gets `409`. | `app/api/businesses/[id]/claim/route.ts` |
 | **Audit logging** | Security-relevant actions (claims now; auth events + lead claims as they land) append to `audit_log` via `logAudit()`, on a separate connection so it can't roll back the business op. | `lib/audit.ts`, `db/…/0002_auth_fks_audit.sql` |
 | **SEC-8 CSP disabled** | **Nonce-based CSP** (middleware) + HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`. | `middleware.ts`, `next.config.ts` |
@@ -31,12 +33,13 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 ## Still to do (tracked, not silently skipped)
 
 - Rate limiter is **in-memory** (single replica) — move to Redis/Upstash before horizontal scale.
-- **Admin review surface** for Tier-2/3 `verification_submissions` and `pending` reviews (approve/
-  reject → raise tier / publish + recompute aggregates). Admin-role-gated.
 - Extend auth audit to **logout / failed-login** (only session-create/login is hooked so far).
 - Async lead layer: move routing/expiry/escalation to **Inngest** (currently synchronous routing +
-  a cron-triggered expiry). Add the review-solicitation trigger on `lead.won`.
-- External notification channels (LINE/Zalo/SMS) remain deferred — Phase 0 entity blockers.
+  a cron-triggered expiry).
+- **Review-solicitation delivery**: `lead.won` enqueues a `review_solicitations` row; wire the
+  actual send (email/LINE/Zalo) + a tokenized submit link. Currently enqueued only.
+- External notification channels (LINE/Zalo/SMS) + automated payments remain deferred — Phase 0
+  entity/PSP blockers.
 - **Media upload**: reviews/evidence currently accept URLs; add signed-upload to object storage
   (R2/S3) with content-type + size limits before exposing publicly.
 - OTP delivery: wire a real email provider (`lib/mailer.ts` fails closed in prod until then).
