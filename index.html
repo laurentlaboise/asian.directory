@@ -92,6 +92,10 @@
                         <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">India</button>
                         <button class="country-btn px-4 py-2 rounded-lg bg-white dark:bg-gray-800 hover:bg-yellow-400 hover:text-gray-900 dark:hover:bg-yellow-400 dark:hover:text-gray-900 transition-colors text-gray-600 dark:text-gray-300">Laos</button>
                     </div>
+                    <!-- Add your business -->
+                    <div class="mt-8">
+                        <button id="add-business-btn" class="px-5 py-2.5 rounded-lg bg-yellow-400 text-gray-900 hover:bg-yellow-500 transition-colors font-medium text-sm">+ Add your business — it's free</button>
+                    </div>
                     <!-- Legal footer and Admin Login -->
                     <div class="mt-8 text-xs text-gray-400 dark:text-gray-500">
                         <p>© 2026 asian.directory. All rights reserved.</p>
@@ -115,6 +119,69 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Add Business Modal -->
+    <div id="submit-modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col">
+            <div class="border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-bold">Add your business</h2>
+                    <p class="text-xs text-gray-400 mt-0.5">Free listing — reviewed by our team before publishing</p>
+                </div>
+                <button id="submit-modal-close" class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="submit-form" class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Business name <span class="text-red-400">*</span></label>
+                    <input name="name" required maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Category <span class="text-red-400">*</span></label>
+                        <input name="category" required maxlength="100" placeholder="e.g. Japanese Ramen" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">City</label>
+                        <input name="city" maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Country</label>
+                        <input name="country" maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Phone</label>
+                        <input name="phone" maxlength="40" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Street address <span class="text-red-400">*</span></label>
+                    <input name="address" required maxlength="200" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description <span class="text-red-400">*</span></label>
+                    <textarea name="description" required minlength="30" maxlength="2000" rows="4" placeholder="Tell visitors what makes your business special (at least 30 characters)" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Email</label>
+                        <input name="email" type="email" maxlength="200" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Website</label>
+                        <input name="website" maxlength="500" placeholder="https://…" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                </div>
+                <!-- Honeypot: hidden from humans, catches bots -->
+                <input name="company_website" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true">
+                <div id="submit-form-msg" class="hidden text-sm rounded-lg p-3"></div>
+                <button type="submit" id="submit-form-btn" class="w-full py-2.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-semibold text-sm transition-colors disabled:opacity-50">Submit for review</button>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -421,7 +488,7 @@
             btn.addEventListener('click', () => {
                 const countryName = btn.textContent;
                 const queryText = `Find businesses in ${countryName}`;
-                
+
                 if (!isChatActive) {
                     promptInput.value = queryText;
                     promptForm.requestSubmit();
@@ -430,6 +497,56 @@
                     promptFormChat.requestSubmit();
                 }
             });
+        });
+
+        // --- ADD YOUR BUSINESS (public submission, no account needed) ---
+        const submitModal = document.getElementById('submit-modal');
+        const submitForm = document.getElementById('submit-form');
+        const submitMsg = document.getElementById('submit-form-msg');
+
+        document.getElementById('add-business-btn').addEventListener('click', () => {
+            submitModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        });
+        const closeSubmitModal = () => {
+            submitModal.classList.add('hidden');
+            document.body.style.overflow = '';
+        };
+        document.getElementById('submit-modal-close').addEventListener('click', closeSubmitModal);
+        submitModal.addEventListener('click', (e) => { if (e.target === submitModal) closeSubmitModal(); });
+
+        submitForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-form-btn');
+            btn.disabled = true;
+            btn.textContent = 'Submitting…';
+            submitMsg.classList.add('hidden');
+
+            const body = Object.fromEntries(new FormData(submitForm).entries());
+            try {
+                const res = await fetch(`${API_BASE_URL}/public/business-submissions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                submitMsg.classList.remove('hidden');
+                if (data.success) {
+                    submitMsg.className = 'text-sm rounded-lg p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300';
+                    submitMsg.textContent = data.message || 'Thank you! Your business has been submitted for review.';
+                    submitForm.querySelectorAll('input:not([name=company_website]), textarea').forEach(el => { el.value = ''; });
+                    setTimeout(closeSubmitModal, 2500);
+                } else {
+                    submitMsg.className = 'text-sm rounded-lg p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300';
+                    submitMsg.textContent = data.error || 'Submission failed. Please try again.';
+                }
+            } catch (err) {
+                submitMsg.classList.remove('hidden');
+                submitMsg.className = 'text-sm rounded-lg p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300';
+                submitMsg.textContent = 'Network error — please try again later.';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Submit for review';
         });
 
     </script>

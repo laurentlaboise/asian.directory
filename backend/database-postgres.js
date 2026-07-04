@@ -323,6 +323,21 @@ async function initDatabase() {
             )
         `);
 
+        // Connected Google accounts (OAuth) for Business Profile integration
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS google_connections (
+                id SERIAL PRIMARY KEY,
+                google_email TEXT UNIQUE NOT NULL,
+                refresh_token TEXT NOT NULL,
+                access_token TEXT,
+                token_expires_at TIMESTAMPTZ,
+                scopes TEXT,
+                connected_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+
         // Indexes for performance
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(status)`);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category)`);
@@ -1219,6 +1234,43 @@ const dbOperations = {
             forecast,
             automations: { ...automationRules, recentExecutions: recentAutomations }
         };
+    },
+
+    // ==================== GOOGLE CONNECTIONS ====================
+    saveGoogleConnection: async ({ google_email, refresh_token, access_token, token_expires_at, scopes, connected_by }) => {
+        const result = await pool.query(`
+            INSERT INTO google_connections (google_email, refresh_token, access_token, token_expires_at, scopes, connected_by)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (google_email) DO UPDATE SET
+                refresh_token = EXCLUDED.refresh_token,
+                access_token = EXCLUDED.access_token,
+                token_expires_at = EXCLUDED.token_expires_at,
+                scopes = EXCLUDED.scopes,
+                updated_at = NOW()
+            RETURNING id
+        `, [google_email, refresh_token, access_token || null, token_expires_at || null, scopes || null, connected_by || null]);
+        return result.rows[0].id;
+    },
+
+    listGoogleConnections: async () => {
+        const result = await pool.query('SELECT id, google_email, scopes, connected_by, created_at, updated_at FROM google_connections ORDER BY created_at DESC');
+        return result.rows;
+    },
+
+    getGoogleConnection: async (id) => {
+        const result = await pool.query('SELECT * FROM google_connections WHERE id = $1', [id]);
+        return result.rows[0] || null;
+    },
+
+    updateGoogleAccessToken: async (id, access_token, token_expires_at) => {
+        await pool.query('UPDATE google_connections SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',
+            [access_token, token_expires_at, id]);
+        return true;
+    },
+
+    deleteGoogleConnection: async (id) => {
+        const result = await pool.query('DELETE FROM google_connections WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 };
 

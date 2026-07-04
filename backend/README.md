@@ -252,6 +252,26 @@ The database is automatically seeded with sample businesses when first initializ
 
 By default, CORS is enabled for all origins. To restrict origins in production, set the `ALLOWED_ORIGINS` environment variable.
 
+## Google Integration (Lead Generator)
+
+The admin dashboard's Lead Generator page uses two Google integrations, each
+configured through environment variables on the backend:
+
+| Variable | Used for | How to get it |
+|---|---|---|
+| `GOOGLE_MAPS_API_KEY` | Google Maps lead search (`/api/google/maps/search`) | Google Cloud Console → create an API key and enable the **Places API (New)** |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | "Connect Google Business" OAuth (`/api/google/oauth/*`) | Google Cloud Console → OAuth 2.0 Client (Web application) |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Optional override of the OAuth callback URL | Defaults to `https://<backend-host>/api/google/oauth/callback` — add this exact URL to the OAuth client's authorized redirect URIs |
+
+Notes:
+- The Business Profile endpoints call Google's My Business APIs, which are
+  quota-gated: request access at https://developers.google.com/my-business
+  before the location listing will return data.
+- Refresh tokens are stored in the `google_connections` table and revoked at
+  Google on disconnect.
+- Endpoints respond with clear configuration errors when these variables are
+  missing, so the feature degrades gracefully.
+
 ## Development
 
 The server uses simple Node.js with Express. Any changes to the code require a restart of the server.

@@ -140,7 +140,8 @@ function csrfProtection(req, res, next) {
     }
     // Skip for public endpoints that don't require session auth
     if (req.path === '/analytics/event' || req.path === '/api/analytics/event' ||
-        req.path === '/conversations' || req.path === '/api/conversations') {
+        req.path === '/conversations' || req.path === '/api/conversations' ||
+        req.path.startsWith('/public/') || req.path.startsWith('/api/public/')) {
         return next();
     }
 
@@ -1959,6 +1960,538 @@ app.get('/api/v1/businesses/:id', apiKeyLimiter, authenticateApiKey, async (req,
     } catch (error) {
         console.error('Public API error (business by id):', error);
         res.status(500).json({ success: false, error: 'Failed to fetch business' });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Google integration: OAuth connect, Business Profile, Maps lead generation
+// ---------------------------------------------------------------------------
+// Env vars: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET (OAuth / Business Profile),
+// GOOGLE_MAPS_API_KEY (Places API), GOOGLE_OAUTH_REDIRECT_URI (optional override)
+const GOOGLE_OAUTH_SCOPES = 'https://www.googleapis.com/auth/business.manage https://www.googleapis.com/auth/userinfo.email';
+
+function googleOauthConfigured() {
+    return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+function googleRedirectUri(req) {
+    if (process.env.GOOGLE_OAUTH_REDIRECT_URI) return process.env.GOOGLE_OAUTH_REDIRECT_URI;
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    return `${proto}://${req.get('host')}/api/google/oauth/callback`;
+}
+
+// Returns a fresh access token for a stored connection, refreshing when expired
+async function getGoogleAccessToken(conn) {
+    const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
+    if (conn.access_token && expiresAt - Date.now() > 60 * 1000) {
+        return conn.access_token;
+    }
+    const resp = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            client_id: process.env.GOOGLE_CLIENT_ID,
+            client_secret: process.env.GOOGLE_CLIENT_SECRET,
+            refresh_token: conn.refresh_token,
+            grant_type: 'refresh_token'
+        })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.access_token) {
+        throw new Error(`Google token refresh failed: ${data.error_description || data.error || resp.status}`);
+    }
+    const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000).toISOString();
+    await dbOperations.updateGoogleAccessToken(conn.id, data.access_token, newExpiry);
+    return data.access_token;
+}
+
+// Collect google_place_id values already present, for duplicate detection
+async function getImportedPlaceIds() {
+    const existing = await dbOperations.getAllBusinesses({});
+    const placeIds = new Set();
+    const nameCity = new Set();
+    for (const b of existing) {
+        const cf = b.custom_fields || {};
+        if (cf.google_place_id) placeIds.add(cf.google_place_id);
+        nameCity.add(`${String(b.name || '').trim().toLowerCase()}|${String(b.city || '').trim().toLowerCase()}`);
+    }
+    return { placeIds, nameCity };
+}
+
+// Config status for the admin panel
+app.get('/api/google/config', authenticateToken, requireRole('admin', 'editor'), (req, res) => {
+    res.json({
+        success: true,
+        maps_configured: !!process.env.GOOGLE_MAPS_API_KEY,
+        oauth_configured: googleOauthConfigured(),
+        redirect_uri: googleRedirectUri(req)
+    });
+});
+
+// Step 1 of OAuth: hand the frontend a Google consent URL
+app.get('/api/google/oauth/url', authenticateToken, requireRole('admin', 'editor'), (req, res) => {
+    if (!googleOauthConfigured()) {
+        return res.status(400).json({
+            success: false,
+            error: 'Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.'
+        });
+    }
+    const state = jwt.sign({ uid: req.user.id, purpose: 'google_oauth' }, JWT_SECRET, { expiresIn: '10m' });
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        redirect_uri: googleRedirectUri(req),
+        response_type: 'code',
+        scope: GOOGLE_OAUTH_SCOPES,
+        access_type: 'offline',
+        prompt: 'consent',
+        state
+    });
+    res.json({ success: true, url });
+});
+
+// Step 2 of OAuth: Google redirects here; validated via the signed state param
+app.get('/api/google/oauth/callback', async (req, res) => {
+    const respond = (ok, message) => {
+        res.status(ok ? 200 : 400).send(`<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding-top:4rem">
+            <h2>${ok ? 'Google account connected' : 'Connection failed'}</h2>
+            <p>${message}</p><p>You can close this window.</p>
+            <script>if(window.opener){window.opener.postMessage({type:'google-oauth',ok:${ok}},'*');setTimeout(()=>window.close(),1500);}</script>
+            </body></html>`);
+    };
+    try {
+        const { code, state, error } = req.query;
+        if (error) return respond(false, `Google returned: ${error}`);
+        if (!code || !state) return respond(false, 'Missing authorization code or state.');
+
+        let statePayload;
+        try {
+            statePayload = jwt.verify(state, JWT_SECRET);
+        } catch {
+            return respond(false, 'Invalid or expired state token. Please retry from the admin panel.');
+        }
+        if (statePayload.purpose !== 'google_oauth') return respond(false, 'Invalid state token.');
+
+        const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: process.env.GOOGLE_CLIENT_ID,
+                client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                redirect_uri: googleRedirectUri(req),
+                grant_type: 'authorization_code'
+            })
+        });
+        const tokens = await tokenResp.json();
+        if (!tokenResp.ok || !tokens.access_token) {
+            return respond(false, `Token exchange failed: ${tokens.error_description || tokens.error || tokenResp.status}`);
+        }
+        if (!tokens.refresh_token) {
+            return respond(false, 'Google did not return a refresh token. Remove this app under myaccount.google.com &rarr; Security &rarr; Third-party access, then connect again.');
+        }
+
+        const userResp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+        });
+        const userinfo = await userResp.json();
+        if (!userinfo.email) return respond(false, 'Could not read the Google account email.');
+
+        const connId = await dbOperations.saveGoogleConnection({
+            google_email: userinfo.email,
+            refresh_token: tokens.refresh_token,
+            access_token: tokens.access_token,
+            token_expires_at: new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString(),
+            scopes: tokens.scope || GOOGLE_OAUTH_SCOPES,
+            connected_by: statePayload.uid
+        });
+        await dbOperations.addAuditLog(statePayload.uid, 'google_connect', 'google_connection', connId,
+            null, { email: userinfo.email }, req.ip);
+        respond(true, `Connected as ${userinfo.email}.`);
+    } catch (err) {
+        console.error('Google OAuth callback error:', err);
+        respond(false, 'Unexpected error during Google connection.');
+    }
+});
+
+app.get('/api/google/connections', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+    try {
+        const connections = await dbOperations.listGoogleConnections();
+        res.json({ success: true, data: connections });
+    } catch (error) {
+        console.error('Error listing Google connections:', error);
+        res.status(500).json({ success: false, error: 'Failed to list Google connections' });
+    }
+});
+
+app.delete('/api/google/connections/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const conn = await dbOperations.getGoogleConnection(id);
+        if (!conn) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+        // Best-effort revocation at Google; deletion proceeds regardless
+        try {
+            await fetch('https://oauth2.googleapis.com/revoke', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ token: conn.refresh_token })
+            });
+        } catch (e) {
+            console.warn('Google token revocation failed:', e.message);
+        }
+        await dbOperations.deleteGoogleConnection(id);
+        await dbOperations.addAuditLog(req.user.id, 'google_disconnect', 'google_connection', id,
+            { email: conn.google_email }, null, req.ip);
+        res.json({ success: true, message: `Disconnected ${conn.google_email}` });
+    } catch (error) {
+        console.error('Error deleting Google connection:', error);
+        res.status(500).json({ success: false, error: 'Failed to disconnect Google account' });
+    }
+});
+
+// List Business Profile locations across the connected account
+app.get('/api/google/business/locations', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+    try {
+        const conn = await dbOperations.getGoogleConnection(parseInt(req.query.connection_id));
+        if (!conn) return res.status(404).json({ success: false, error: 'Google connection not found' });
+
+        const token = await getGoogleAccessToken(conn);
+        const authHeaders = { Authorization: `Bearer ${token}` };
+
+        const acctResp = await fetch('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', { headers: authHeaders });
+        const acctData = await acctResp.json();
+        if (!acctResp.ok) {
+            const msg = acctData.error?.message || `HTTP ${acctResp.status}`;
+            return res.status(502).json({
+                success: false,
+                error: `Google Business Profile API error: ${msg}. Note: this API requires approved access — request it at developers.google.com/my-business (Business Profile APIs are quota-gated by Google).`
+            });
+        }
+
+        const { placeIds } = await getImportedPlaceIds();
+        const locations = [];
+        const readMask = 'name,title,storefrontAddress,phoneNumbers,websiteUri,categories,metadata';
+        for (const account of (acctData.accounts || []).slice(0, 10)) {
+            let pageToken = '';
+            do {
+                const url = `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=${encodeURIComponent(readMask)}&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+                const locResp = await fetch(url, { headers: authHeaders });
+                const locData = await locResp.json();
+                if (!locResp.ok) {
+                    console.error('Locations fetch failed for', account.name, locData.error?.message);
+                    break;
+                }
+                for (const loc of (locData.locations || [])) {
+                    const addr = loc.storefrontAddress || {};
+                    const placeId = loc.metadata?.placeId || null;
+                    locations.push({
+                        account: account.accountName || account.name,
+                        google_name: loc.name,
+                        name: loc.title,
+                        address: [...(addr.addressLines || []), addr.locality, addr.administrativeArea].filter(Boolean).join(', '),
+                        city: addr.locality || null,
+                        country: addr.regionCode || null,
+                        postal_code: addr.postalCode || null,
+                        phone: loc.phoneNumbers?.primaryPhone || null,
+                        website: loc.websiteUri || null,
+                        category: loc.categories?.primaryCategory?.displayName || null,
+                        place_id: placeId,
+                        maps_url: loc.metadata?.mapsUri || null,
+                        already_imported: !!(placeId && placeIds.has(placeId))
+                    });
+                }
+                pageToken = locData.nextPageToken || '';
+            } while (pageToken);
+        }
+        res.json({ success: true, data: locations, accounts: (acctData.accounts || []).length });
+    } catch (error) {
+        console.error('Error fetching Business Profile locations:', error);
+        res.status(500).json({ success: false, error: error.message || 'Failed to fetch Business Profile locations' });
+    }
+});
+
+// Search Google Maps (Places API New) for lead generation
+app.post('/api/google/maps/search', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+    try {
+        if (!process.env.GOOGLE_MAPS_API_KEY) {
+            return res.status(400).json({
+                success: false,
+                error: 'Google Maps is not configured. Set the GOOGLE_MAPS_API_KEY environment variable (Places API New must be enabled on the key).'
+            });
+        }
+        const query = String(req.body.query || '').trim();
+        if (!query) return res.status(400).json({ success: false, error: 'query is required, e.g. "coffee shops in Vientiane"' });
+        const maxResults = Math.min(Math.max(parseInt(req.body.max_results) || 20, 1), 20);
+
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY,
+                'X-Goog-FieldMask': [
+                    'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
+                    'places.internationalPhoneNumber', 'places.websiteUri', 'places.rating', 'places.userRatingCount',
+                    'places.googleMapsUri', 'places.primaryTypeDisplayName', 'places.businessStatus', 'places.location'
+                ].join(',')
+            },
+            body: JSON.stringify({ textQuery: query, pageSize: maxResults })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            const msg = data.error?.message || `HTTP ${resp.status}`;
+            return res.status(502).json({ success: false, error: `Google Places API error: ${msg}` });
+        }
+
+        const { placeIds, nameCity } = await getImportedPlaceIds();
+        const component = (place, type) =>
+            (place.addressComponents || []).find(c => (c.types || []).includes(type))?.longText || null;
+
+        const results = (data.places || []).map(p => {
+            const city = component(p, 'locality') || component(p, 'administrative_area_level_1');
+            const name = p.displayName?.text || '';
+            return {
+                place_id: p.id,
+                name,
+                address: p.formattedAddress || null,
+                city,
+                country: component(p, 'country'),
+                phone: p.internationalPhoneNumber || null,
+                website: p.websiteUri || null,
+                rating: p.rating || null,
+                review_count: p.userRatingCount || 0,
+                maps_url: p.googleMapsUri || null,
+                category: p.primaryTypeDisplayName?.text || null,
+                business_status: p.businessStatus || null,
+                lat: p.location?.latitude ?? null,
+                lng: p.location?.longitude ?? null,
+                already_imported: placeIds.has(p.id) ||
+                    nameCity.has(`${name.trim().toLowerCase()}|${String(city || '').trim().toLowerCase()}`)
+            };
+        });
+        res.json({ success: true, data: results, query });
+    } catch (error) {
+        console.error('Error searching Google Maps:', error);
+        res.status(500).json({ success: false, error: 'Failed to search Google Maps' });
+    }
+});
+
+// Import selected Google leads (from Maps search or Business Profile) as businesses
+app.post('/api/google/import-leads', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+    try {
+        const { leads, source = 'google_maps', defaults = {} } = req.body;
+        if (!Array.isArray(leads) || leads.length === 0) {
+            return res.status(400).json({ success: false, error: 'leads must be a non-empty array' });
+        }
+        if (leads.length > 100) {
+            return res.status(400).json({ success: false, error: 'Maximum 100 leads per import' });
+        }
+        const validSource = ['google_maps', 'google_business'].includes(source) ? source : 'google_maps';
+        const { placeIds, nameCity } = await getImportedPlaceIds();
+
+        const results = [];
+        let created = 0, skipped = 0, failed = 0;
+        for (const lead of leads) {
+            const name = String(lead.name || '').trim();
+            if (!name) { failed++; results.push({ name: '(empty)', status: 'failed', error: 'Missing name' }); continue; }
+
+            const key = `${name.toLowerCase()}|${String(lead.city || '').trim().toLowerCase()}`;
+            if ((lead.place_id && placeIds.has(lead.place_id)) || nameCity.has(key)) {
+                skipped++;
+                results.push({ name, status: 'skipped', error: 'Already in the directory' });
+                continue;
+            }
+
+            const category = String(defaults.category || lead.category || 'Uncategorized').trim();
+            const descriptionParts = [
+                `${name} is a ${category.toLowerCase()} located at ${lead.address || 'an unknown address'}.`,
+                lead.rating ? `Rated ${lead.rating}/5 from ${lead.review_count || 0} Google reviews.` : null,
+                'Details imported from Google — verify and enrich before publishing.'
+            ].filter(Boolean);
+
+            try {
+                const id = await dbOperations.addBusiness({
+                    name,
+                    business_type: defaults.business_type || lead.category || null,
+                    category,
+                    description: String(defaults.description || descriptionParts.join(' ')),
+                    address: String(lead.address || 'Address pending verification'),
+                    country: lead.country || defaults.country || null,
+                    city: lead.city || defaults.city || null,
+                    postal_code: lead.postal_code || null,
+                    phone: lead.phone || null,
+                    website: lead.website || null,
+                    keywords: [category, lead.city].filter(Boolean),
+                    socials: {},
+                    status: 'pending',
+                    pipeline_stage: 'new_lead',
+                    priority: defaults.priority || 'medium',
+                    source: validSource,
+                    notes: `Imported from ${validSource === 'google_maps' ? 'Google Maps' : 'Google Business Profile'} by ${req.user.username}`,
+                    custom_fields: {
+                        google_place_id: lead.place_id || null,
+                        google_maps_url: lead.maps_url || null,
+                        google_rating: lead.rating || null,
+                        google_review_count: lead.review_count || 0,
+                        google_business_name: lead.google_name || null
+                    },
+                    created_by: req.user.id
+                });
+                if (lead.place_id) placeIds.add(lead.place_id);
+                nameCity.add(key);
+                created++;
+                results.push({ name, status: 'created', id });
+            } catch (err) {
+                failed++;
+                console.error('Lead import failed:', name, err.message);
+                results.push({ name, status: 'failed', error: err.message });
+            }
+        }
+
+        await dbOperations.addAuditLog(req.user.id, 'google_import_leads', 'business', null,
+            null, { source: validSource, total: leads.length, created, skipped, failed }, req.ip);
+        res.json({ success: true, summary: { total: leads.length, created, skipped, failed }, results });
+    } catch (error) {
+        console.error('Error importing Google leads:', error);
+        res.status(500).json({ success: false, error: 'Failed to import leads' });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Ad copy generator: Google Ads RSA + Facebook copy from a listing
+// ---------------------------------------------------------------------------
+app.post('/api/ads/generate', authenticateToken, async (req, res) => {
+    try {
+        let biz = req.body.business;
+        if (req.body.business_id) {
+            biz = await dbOperations.getBusinessById(parseInt(req.body.business_id));
+            if (!biz) return res.status(404).json({ success: false, error: 'Business not found' });
+        }
+        if (!biz || !biz.name) return res.status(400).json({ success: false, error: 'Provide business_id or a business object with at least a name' });
+
+        const name = String(biz.name).trim();
+        const category = String(biz.category || biz.business_type || 'Business').trim();
+        const city = String(biz.city || '').trim();
+        const country = String(biz.country || '').trim();
+        const place = city || country;
+        const offerings = Array.isArray(biz.special_offerings) ? biz.special_offerings : [];
+        const keywords = Array.isArray(biz.keywords) ? biz.keywords : [];
+        const rating = biz.custom_fields?.google_rating;
+        const cap = (s, n) => (s.length <= n ? s : null);
+
+        // Google responsive search ads: headlines max 30 chars, descriptions max 90
+        const headlineCandidates = [
+            name,
+            place ? `${category} in ${place}` : category,
+            place ? `Best ${category} — ${place}` : `Best ${category}`,
+            `Visit ${name}`,
+            rating ? `Rated ${rating}★ on Google` : null,
+            `Top ${category} Near You`,
+            keywords[0] ? `${keywords[0]} & More` : null,
+            offerings.includes('Delivery') ? 'Delivery Available' : null,
+            offerings.includes('Reservations') ? 'Book a Table Today' : null,
+            offerings.includes('Online Orders') ? 'Order Online Now' : null,
+            'Discover Asia’s Best'
+        ].filter(Boolean).map(h => cap(h.trim(), 30)).filter(Boolean);
+        const headlines = [...new Set(headlineCandidates)].slice(0, 10);
+
+        const firstSentence = String(biz.description || '').split(/(?<=[.!?])\s+/)[0] || '';
+        const offeringsLine = offerings.length ? `${offerings.slice(0, 4).join(', ')} — all at ${name}.` : null;
+        const descriptionCandidates = [
+            firstSentence,
+            offeringsLine,
+            place ? `Looking for ${category.toLowerCase()} in ${place}? ${name} has you covered.` : null,
+            rating ? `${rating}/5 stars from ${biz.custom_fields?.google_review_count || 'many'} happy customers. See why.` : null,
+            `Find ${name} on asian.directory — Asia’s AI-powered business directory.`
+        ].filter(Boolean).map(d => cap(d.trim(), 90)).filter(Boolean);
+        const descriptions = [...new Set(descriptionCandidates)].slice(0, 4);
+
+        // Facebook/Instagram: primary text ~125 chars, headline ~40
+        const fbPrimary = cap(
+            `${firstSentence || `${name} — ${category}${place ? ' in ' + place : ''}.`}`.trim(), 125
+        ) || `${name} — ${category}${place ? ' in ' + place : ''}.`.slice(0, 125);
+
+        res.json({
+            success: true,
+            data: {
+                google_ads: {
+                    headlines,
+                    descriptions,
+                    final_url: biz.website || `https://asian.directory/?biz=${encodeURIComponent(name)}`,
+                    path: [category.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 15), city.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 15)].filter(Boolean)
+                },
+                facebook: {
+                    primary_text: fbPrimary,
+                    headline: cap(place ? `${category} in ${place}` : category, 40) || category.slice(0, 40),
+                    description: cap(`Visit ${name} today`, 30),
+                    cta: biz.website ? 'LEARN_MORE' : 'GET_DIRECTIONS'
+                },
+                suggested_google_keywords: [...new Set([
+                    `${category.toLowerCase()}${place ? ' ' + place.toLowerCase() : ''}`,
+                    `best ${category.toLowerCase()}${place ? ' in ' + place.toLowerCase() : ''}`,
+                    name.toLowerCase(),
+                    ...keywords.map(k => String(k).toLowerCase())
+                ])].slice(0, 10)
+            }
+        });
+    } catch (error) {
+        console.error('Error generating ad copy:', error);
+        res.status(500).json({ success: false, error: 'Failed to generate ad copy' });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Public endpoints: no account required (rate-limited, CSRF-exempt)
+// ---------------------------------------------------------------------------
+const publicSubmitLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    message: { success: false, error: 'Too many submissions from this address. Please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Public business submission from the website (lands as a pending lead)
+app.post('/api/public/business-submissions', publicSubmitLimiter, async (req, res) => {
+    try {
+        const b = req.body || {};
+        // Honeypot field: real users never fill "company_website"
+        if (b.company_website) return res.json({ success: true, message: 'Thank you for your submission!' });
+
+        const required = { name: 100, category: 100, description: 2000, address: 200 };
+        const missing = Object.keys(required).filter(f => !String(b[f] || '').trim());
+        if (missing.length) {
+            return res.status(400).json({ success: false, error: `Missing required fields: ${missing.join(', ')}` });
+        }
+        for (const [field, maxLen] of Object.entries({ ...required, city: 100, country: 100, email: 200, phone: 40, website: 500 })) {
+            if (b[field] && String(b[field]).length > maxLen) {
+                return res.status(400).json({ success: false, error: `${field} is too long (max ${maxLen} characters)` });
+            }
+        }
+
+        const id = await dbOperations.addBusiness({
+            name: String(b.name).trim(),
+            category: String(b.category).trim(),
+            description: String(b.description).trim(),
+            address: String(b.address).trim(),
+            city: String(b.city || '').trim() || null,
+            country: String(b.country || '').trim() || null,
+            email: String(b.email || '').trim() || null,
+            phone: String(b.phone || '').trim() || null,
+            website: String(b.website || '').trim() || null,
+            contact_person: String(b.contact_person || '').trim() || null,
+            socials: {},
+            keywords: [],
+            status: 'pending',
+            pipeline_stage: 'new_lead',
+            priority: 'medium',
+            source: 'user_submission',
+            notes: 'Submitted via public website form'
+        });
+        await dbOperations.addAuditLog(null, 'public_submission', 'business', id, null, { name: b.name }, req.ip);
+        res.json({ success: true, message: 'Thank you! Your business has been submitted and will appear after review.' });
+    } catch (error) {
+        console.error('Error handling public submission:', error);
+        res.status(500).json({ success: false, error: 'Failed to submit. Please try again later.' });
     }
 });
 

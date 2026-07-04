@@ -224,6 +224,21 @@ function initDatabase() {
         )
     `);
 
+    // Connected Google accounts (OAuth) for Business Profile integration
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS google_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            google_email TEXT UNIQUE NOT NULL,
+            refresh_token TEXT NOT NULL,
+            access_token TEXT,
+            token_expires_at DATETIME,
+            scopes TEXT,
+            connected_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
     console.log('Database initialized successfully');
 }
 
@@ -902,6 +917,41 @@ const dbOperations = {
             return headers.join(',') + '\n' + rows.join('\n');
         }
         return businesses;
+    },
+
+    // ==================== GOOGLE CONNECTIONS ====================
+    saveGoogleConnection: ({ google_email, refresh_token, access_token, token_expires_at, scopes, connected_by }) => {
+        const stmt = db.prepare(`
+            INSERT INTO google_connections (google_email, refresh_token, access_token, token_expires_at, scopes, connected_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(google_email) DO UPDATE SET
+                refresh_token = excluded.refresh_token,
+                access_token = excluded.access_token,
+                token_expires_at = excluded.token_expires_at,
+                scopes = excluded.scopes,
+                updated_at = CURRENT_TIMESTAMP
+        `);
+        stmt.run(google_email, refresh_token, access_token || null, token_expires_at || null, scopes || null, connected_by || null);
+        return db.prepare('SELECT id FROM google_connections WHERE google_email = ?').get(google_email).id;
+    },
+
+    listGoogleConnections: () => {
+        return db.prepare('SELECT id, google_email, scopes, connected_by, created_at, updated_at FROM google_connections ORDER BY created_at DESC').all();
+    },
+
+    getGoogleConnection: (id) => {
+        return db.prepare('SELECT * FROM google_connections WHERE id = ?').get(id) || null;
+    },
+
+    updateGoogleAccessToken: (id, access_token, token_expires_at) => {
+        db.prepare('UPDATE google_connections SET access_token = ?, token_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+            .run(access_token, token_expires_at, id);
+        return true;
+    },
+
+    deleteGoogleConnection: (id) => {
+        const result = db.prepare('DELETE FROM google_connections WHERE id = ?').run(id);
+        return result.changes > 0;
     }
 };
 
