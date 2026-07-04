@@ -5,6 +5,7 @@ import { requireBusinessAccess } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { embedText, toVectorLiteral } from "@/lib/embeddings";
+import { httpUrl } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -12,12 +13,13 @@ const Params = z.object({ id: z.string().uuid() });
 
 // .strict() so only these exact columns can ever be written — the SET clause is built from these
 // fixed keys, never arbitrary user input, so there is no identifier-injection surface.
+// website is http(s)-only (httpUrl) so a javascript:/data: href can't be persisted + rendered.
 const Body = z
   .object({
     name: z.string().trim().min(1).max(255).optional(),
     description: z.string().trim().max(4000).optional(),
     phone: z.string().trim().max(40).nullable().optional(),
-    website: z.string().url().max(500).nullable().optional(),
+    website: httpUrl(500).nullable().optional(),
   })
   .strict();
 

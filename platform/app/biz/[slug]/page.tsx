@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getBusinessBySlug, siteOrigin } from "@/lib/queries";
 import { safeJsonLd } from "@/lib/jsonld";
+import { safeHref } from "@/lib/validation";
 
 export const revalidate = 3600;
 
@@ -75,11 +76,11 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
             <dd className="inline">{b.phone}</dd>
           </div>
         )}
-        {b.website && (
+        {safeHref(b.website) && (
           <div>
             <dt className="inline font-medium">Website: </dt>
             <dd className="inline">
-              <a href={b.website} rel="nofollow noopener noreferrer" target="_blank" className="text-yellow-600">
+              <a href={safeHref(b.website)} rel="nofollow noopener noreferrer" target="_blank" className="text-yellow-600">
                 {b.website}
               </a>
             </dd>

@@ -52,9 +52,14 @@ export async function verifyChallenge(userId: string, businessId: string, code: 
 
   const ch = r.rows[0];
   if (new Date(ch.expires_at).getTime() < Date.now()) return { ok: false, reason: "expired" };
-  if (ch.attempts >= MAX_ATTEMPTS) return { ok: false, reason: "too_many" };
 
-  await pool.query("update otp_challenges set attempts = attempts + 1 where id = $1", [ch.id]);
+  // Atomically consume one attempt and enforce the cap in a single statement, so N concurrent
+  // confirms can't all read the same count and slip past the 5-guess limit (TOCTOU).
+  const inc = await pool.query(
+    `update otp_challenges set attempts = attempts + 1 where id = $1 and attempts < $2 returning id`,
+    [ch.id, MAX_ATTEMPTS],
+  );
+  if (inc.rowCount === 0) return { ok: false, reason: "too_many" };
 
   const expected = Buffer.from(ch.code_hash, "hex");
   const actual = Buffer.from(hashCode(code, salt), "hex");

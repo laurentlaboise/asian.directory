@@ -42,7 +42,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       metadata: { reason: result.reason },
       ip: clientIp(req.headers),
     });
-    return NextResponse.json({ error: "Verification failed", reason: result.reason }, { status: 400 });
+    // Reason is logged above, not returned — avoid a client-visible oracle (generic error only).
+    return NextResponse.json({ error: "Verification failed" }, { status: 400 });
   }
 
   await pool.query(

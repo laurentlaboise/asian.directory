@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/session";
 import { screenReview } from "@/lib/moderation";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { httpUrl } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ const Body = z.object({
   rating: z.number().int().min(1).max(5),
   body: z.string().trim().max(4000).optional(),
   media: z
-    .array(z.object({ url: z.string().url().max(1000), kind: z.enum(["image", "video"]) }))
+    .array(z.object({ url: httpUrl(1000), kind: z.enum(["image", "video"]) }))
     .max(10)
     .optional(),
 });

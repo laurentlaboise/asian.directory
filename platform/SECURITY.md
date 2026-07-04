@@ -20,7 +20,7 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 | **SEC-8 CSP disabled** | **Nonce-based CSP** (middleware) + HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`. | `middleware.ts`, `next.config.ts` |
 | **SQL injection** | All queries fully **parameterized**; user input never string-concatenated into SQL. | `app/api/search/route.ts` |
 | **Info-leak error handling** | API returns generic errors; detail is `console.error`-logged only. | `app/api/search/route.ts` |
-| **Input validation** | Every request body validated with **zod** before use. | `app/api/search`, `synthesis`, `assistant` |
+| **Input validation** | Every request body validated with **zod** before use. User-supplied URLs (website / review media / evidence) are **http(s)-scheme-restricted** via `httpUrl` — `z.url()` alone accepts `javascript:`/`data:`, so schemes are constrained at validation AND guarded again at render (`safeHref`), not left to CSP. | `lib/validation.ts`, business PATCH, reviews, verify/document, `app/biz/[slug]/page.tsx` |
 | **LLM surface abuse/cost** | LLM-backed routes (synthesis/assistant/reformulate) are rate-limited tighter than search; prompt business content is fetched from the DB by id (not client-supplied); output is schema-constrained (synthesis) or capped and rendered as text (assistant), containing prompt-injection blast radius. | `app/api/synthesis`, `app/api/assistant`, `lib/reformulate.ts` |
 
 ## Still to do (tracked, not silently skipped)

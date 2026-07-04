@@ -4,6 +4,7 @@ import { pool } from "@/lib/db";
 import { requireBusinessAccess } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { httpUrl } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ const Params = z.object({ id: z.string().uuid() });
 const Body = z.object({
   tier: z.union([z.literal(2), z.literal(3)]),
   kind: z.enum(["community", "moic", "o2o"]),
-  evidenceUrl: z.string().url().max(1000),
+  evidenceUrl: httpUrl(1000),
   note: z.string().trim().max(1000).optional(),
 });
 
