@@ -667,6 +667,85 @@
     </div>
 </div>
 
+<!-- Bulk Import Modal -->
+<div id="import-modal" class="hidden fixed inset-0 z-50 modal-overlay bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col">
+        <div class="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
+            <div>
+                <h2 class="text-xl font-bold">Import Businesses</h2>
+                <p class="text-xs text-gray-400 mt-0.5">Upload a spreadsheet to create multiple listings at once</p>
+            </div>
+            <button onclick="closeImportModal()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-6 py-5">
+            <!-- Step 1: choose file -->
+            <div id="import-step-file">
+                <div id="import-dropzone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-10 text-center cursor-pointer hover:border-yellow-400 dark:hover:border-yellow-400 transition-colors">
+                    <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                    <p class="font-medium text-sm">Click to choose a file, or drag &amp; drop it here</p>
+                    <p class="text-xs text-gray-400 mt-1.5">Excel (.xlsx, .xls), CSV, TSV or OpenDocument (.ods) &middot; all tabs are scanned automatically</p>
+                    <input id="import-file-input" type="file" accept=".xlsx,.xls,.csv,.tsv,.ods" class="hidden">
+                </div>
+                <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3.5 text-xs text-blue-800 dark:text-blue-200 space-y-1">
+                    <p class="font-semibold">Using Google Sheets or Google Drive?</p>
+                    <p>In Google Sheets open your file and choose <span class="font-medium">File &rarr; Download &rarr; Microsoft Excel (.xlsx)</span>, then upload the downloaded file here. All tabs come along with it.</p>
+                    <p class="mt-1">Column headers can be either field labels (e.g. <span class="font-mono">Business Name</span>) or API keys (e.g. <span class="font-mono">name</span>). Tabs without recognizable columns (notes, analysis&hellip;) are ignored automatically.</p>
+                </div>
+                <div id="import-file-error" class="hidden mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3.5 text-sm text-red-700 dark:text-red-300"></div>
+            </div>
+
+            <!-- Step 2: preview -->
+            <div id="import-step-preview" class="hidden">
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <div id="import-summary" class="text-sm font-medium"></div>
+                    <div class="flex-1"></div>
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input id="import-skip-duplicates" type="checkbox" checked class="rounded border-gray-300 text-yellow-400 focus:ring-yellow-400">
+                        Skip duplicates (same name + city)
+                    </label>
+                </div>
+                <div id="import-invalid-note" class="hidden mb-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-200"></div>
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto max-h-80 overflow-y-auto">
+                    <table class="w-full text-xs">
+                        <thead class="bg-gray-50 dark:bg-gray-700/50 sticky top-0"><tr>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Row</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Name</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Category</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">City</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Country</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
+                            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Issues</th>
+                        </tr></thead>
+                        <tbody id="import-preview-body"></tbody>
+                    </table>
+                </div>
+                <p id="import-preview-more" class="hidden text-xs text-gray-400 mt-2"></p>
+            </div>
+
+            <!-- Step 3: progress & results -->
+            <div id="import-step-progress" class="hidden">
+                <div class="mb-3 flex justify-between text-sm"><span id="import-progress-label">Importing&hellip;</span><span id="import-progress-count"></span></div>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-5">
+                    <div id="import-progress-bar" class="bg-yellow-400 h-2.5 rounded-full transition-all" style="width:0%"></div>
+                </div>
+                <div id="import-results" class="hidden">
+                    <div id="import-results-summary" class="grid grid-cols-3 gap-3 mb-4 text-center"></div>
+                    <div id="import-results-issues" class="hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 max-h-60 overflow-y-auto text-xs"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex gap-3">
+            <button id="import-confirm-btn" onclick="runImport()" class="hidden flex-1 py-2.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"></button>
+            <button id="import-back-btn" onclick="resetImportModal()" class="hidden px-5 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium transition-colors">Choose another file</button>
+            <button id="import-close-btn" onclick="closeImportModal()" class="px-5 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium transition-colors">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ==================== CONFIG ====================
 let API_BASE_URL;
@@ -867,6 +946,7 @@ async function renderBusinesses(el) {
             <select id="biz-filter-category" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"><option value="">All Categories</option>${categories.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
             <select id="biz-filter-country" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"><option value="">All Countries</option>${countries.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
             <div class="flex-1"></div>
+            <button onclick="openImportModal()" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Import</button>
             <button onclick="exportData('json')" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">Export JSON</button>
             <button onclick="exportData('csv')" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">Export CSV</button>
             <button onclick="openAddBusiness()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">+ Add Business</button>
@@ -1987,6 +2067,304 @@ async function exportData(format) {
         URL.revokeObjectURL(url);
         toast('Exported successfully');
     } else toast('Export failed', 'error');
+}
+
+// ==================== BULK IMPORT ====================
+// Headers are matched case-insensitively against either the API key or the human label
+const IMPORT_HEADER_ALIASES = {
+    name: ['name', 'business name'],
+    business_type: ['business_type', 'business type'],
+    category: ['category'],
+    primary_language: ['primary_language', 'primary language'],
+    website: ['website', 'website url'],
+    description: ['description'],
+    country: ['country'],
+    state_province: ['state_province', 'state / province', 'state province', 'state', 'province'],
+    city: ['city'],
+    postal_code: ['postal_code', 'postal / zip code', 'postal code', 'zip code', 'zip'],
+    address: ['address', 'street address'],
+    phone: ['phone', 'phone number'],
+    alt_phone: ['alt_phone', 'alternative phone'],
+    email: ['email', 'email address'],
+    contact_person: ['contact_person', 'contact person'],
+    contact_person_title: ['contact_person_title', 'contact person title'],
+    business_hours: ['business_hours', 'business hours'],
+    'socials.instagram': ['socials.instagram', 'instagram'],
+    'socials.facebook': ['socials.facebook', 'facebook'],
+    'socials.x': ['socials.x', 'x (twitter)', 'twitter', 'x'],
+    'socials.linkedin': ['socials.linkedin', 'linkedin'],
+    'socials.youtube': ['socials.youtube', 'youtube'],
+    'socials.tiktok': ['socials.tiktok', 'tiktok'],
+    'socials.whatsapp': ['socials.whatsapp', 'whatsapp / wechat', 'whatsapp', 'wechat'],
+    status: ['status'],
+    pipeline_stage: ['pipeline_stage', 'pipeline stage', 'pipeline'],
+    priority: ['priority'],
+    year_established: ['year_established', 'year established'],
+    employee_count: ['employee_count', 'number of employees', 'employees'],
+    source: ['source'],
+    keywords: ['keywords', 'keywords / tags', 'tags'],
+    meta_description: ['meta_description', 'meta description'],
+    target_audience: ['target_audience', 'target audience'],
+    special_offerings: ['special_offerings', 'special offerings'],
+    verification_notes: ['verification_notes', 'verification notes'],
+    notes: ['notes', 'internal notes']
+};
+const IMPORT_HEADER_LOOKUP = {};
+Object.entries(IMPORT_HEADER_ALIASES).forEach(([key, aliases]) => aliases.forEach(a => { IMPORT_HEADER_LOOKUP[a] = key; }));
+const IMPORT_REQUIRED = ['name', 'category', 'description', 'address'];
+
+let importRecords = [];
+
+function openImportModal() {
+    resetImportModal();
+    document.getElementById('import-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    ensureSheetJS().catch(() => showImportError('Could not load the spreadsheet parser. Check your internet connection and try again.'));
+}
+
+function closeImportModal() {
+    document.getElementById('import-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+function resetImportModal() {
+    importRecords = [];
+    document.getElementById('import-step-file').classList.remove('hidden');
+    document.getElementById('import-step-preview').classList.add('hidden');
+    document.getElementById('import-step-progress').classList.add('hidden');
+    document.getElementById('import-results').classList.add('hidden');
+    document.getElementById('import-file-error').classList.add('hidden');
+    document.getElementById('import-confirm-btn').classList.add('hidden');
+    document.getElementById('import-back-btn').classList.add('hidden');
+    document.getElementById('import-close-btn').textContent = 'Cancel';
+    document.getElementById('import-progress-bar').style.width = '0%';
+    document.getElementById('import-file-input').value = '';
+}
+
+let sheetJSPromise = null;
+function ensureSheetJS() {
+    if (window.XLSX) return Promise.resolve();
+    if (!sheetJSPromise) {
+        sheetJSPromise = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+            s.onload = resolve;
+            s.onerror = () => { sheetJSPromise = null; reject(new Error('failed to load SheetJS')); };
+            document.head.appendChild(s);
+        });
+    }
+    return sheetJSPromise;
+}
+
+function showImportError(msg) {
+    const el = document.getElementById('import-file-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+
+// Wire up dropzone + file input
+(function initImportDropzone() {
+    const dz = document.getElementById('import-dropzone');
+    const input = document.getElementById('import-file-input');
+    dz.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { if (input.files[0]) handleImportFile(input.files[0]); });
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('border-yellow-400'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('border-yellow-400'));
+    dz.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dz.classList.remove('border-yellow-400');
+        if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]);
+    });
+})();
+
+async function handleImportFile(file) {
+    document.getElementById('import-file-error').classList.add('hidden');
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+
+    if (ext === 'pdf') {
+        showImportError('PDF import is not supported — a PDF has no reliable table structure. Export your data as Excel (.xlsx) or CSV and upload that instead.');
+        return;
+    }
+    if (ext === 'gsheet') {
+        showImportError('This is a Google Sheets shortcut file, not the spreadsheet itself. In Google Sheets choose File → Download → Microsoft Excel (.xlsx), then upload the downloaded file.');
+        return;
+    }
+    if (!['xlsx', 'xls', 'csv', 'tsv', 'ods'].includes(ext)) {
+        showImportError(`Unsupported file type ".${ext}". Please upload an Excel (.xlsx, .xls), CSV, TSV or OpenDocument (.ods) file.`);
+        return;
+    }
+
+    try {
+        await ensureSheetJS();
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const { records, sheetsUsed, sheetsSkipped } = extractImportRecords(wb);
+
+        if (records.length === 0) {
+            showImportError('No business rows found. Make sure at least one tab has a header row with columns like "Business Name" (or "name"), "Category", "Description", "Address".');
+            return;
+        }
+        importRecords = records;
+        renderImportPreview(sheetsUsed, sheetsSkipped);
+    } catch (e) {
+        console.error('Import parse error:', e);
+        showImportError(`Could not read this file: ${e.message}`);
+    }
+}
+
+function extractImportRecords(wb) {
+    const records = [];
+    const sheetsUsed = [], sheetsSkipped = [];
+    let rowCounter = 0;
+
+    for (const sheetName of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+
+        // Find the header row: within the first 15 rows, the one mapping to the most
+        // known fields (needs at least 3 fields including "name")
+        let headerIdx = -1, headerMap = null, bestCount = 0;
+        for (let r = 0; r < Math.min(rows.length, 15); r++) {
+            const map = {};
+            rows[r].forEach((cell, c) => {
+                const key = IMPORT_HEADER_LOOKUP[String(cell).trim().toLowerCase()];
+                if (key && !(key in map)) map[key] = c;
+            });
+            const count = Object.keys(map).length;
+            if (count >= 3 && ('name' in map) && count > bestCount) {
+                headerIdx = r; headerMap = map; bestCount = count;
+            }
+        }
+        if (headerIdx === -1) { sheetsSkipped.push(sheetName); continue; }
+
+        let added = 0;
+        for (let r = headerIdx + 1; r < rows.length; r++) {
+            const row = rows[r];
+            const rec = { socials: {} };
+            let hasData = false;
+            for (const [key, col] of Object.entries(headerMap)) {
+                const val = String(row[col] ?? '').trim();
+                if (!val) continue;
+                hasData = true;
+                if (key.startsWith('socials.')) rec.socials[key.slice(8)] = val;
+                else rec[key] = val;
+            }
+            if (!hasData || !rec.name) continue;
+            rowCounter++;
+            rec._row = rowCounter;
+            rec._sheet = sheetName;
+            rec._issues = IMPORT_REQUIRED.filter(f => !rec[f]).map(f => `missing ${f}`);
+            records.push(rec);
+            added++;
+        }
+        if (added > 0) sheetsUsed.push(`${sheetName} (${added})`); else sheetsSkipped.push(sheetName);
+    }
+    return { records, sheetsUsed, sheetsSkipped };
+}
+
+function renderImportPreview(sheetsUsed, sheetsSkipped) {
+    const valid = importRecords.filter(r => r._issues.length === 0);
+    const invalid = importRecords.filter(r => r._issues.length > 0);
+
+    document.getElementById('import-step-file').classList.add('hidden');
+    document.getElementById('import-step-preview').classList.remove('hidden');
+
+    document.getElementById('import-summary').innerHTML =
+        `<span class="text-green-600 dark:text-green-400 font-semibold">${valid.length}</span> ready to import` +
+        (invalid.length ? ` &middot; <span class="text-red-500 font-semibold">${invalid.length}</span> with problems` : '') +
+        `<span class="block text-xs text-gray-400 font-normal mt-0.5">Tabs read: ${sheetsUsed.join(', ')}${sheetsSkipped.length ? ' &middot; ignored: ' + sheetsSkipped.join(', ') : ''}</span>`;
+
+    const note = document.getElementById('import-invalid-note');
+    if (invalid.length) {
+        note.textContent = `${invalid.length} row(s) are missing required fields (name, category, description or address) and will NOT be imported. Fix them in the spreadsheet and re-upload, or import the valid rows now.`;
+        note.classList.remove('hidden');
+    } else note.classList.add('hidden');
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const MAX_PREVIEW = 50;
+    document.getElementById('import-preview-body').innerHTML = importRecords.slice(0, MAX_PREVIEW).map(r => `
+        <tr class="border-t border-gray-100 dark:border-gray-700 ${r._issues.length ? 'bg-red-50 dark:bg-red-900/10' : ''}">
+            <td class="px-3 py-2 text-gray-400 whitespace-nowrap">${esc(r._sheet)}:${r._row}</td>
+            <td class="px-3 py-2 font-medium">${esc(r.name)}</td>
+            <td class="px-3 py-2">${esc(r.category || '')}</td>
+            <td class="px-3 py-2">${esc(r.city || '')}</td>
+            <td class="px-3 py-2">${esc(r.country || '')}</td>
+            <td class="px-3 py-2">${esc(r.status || 'pending')}</td>
+            <td class="px-3 py-2 text-red-500">${esc(r._issues.join(', '))}</td>
+        </tr>`).join('');
+
+    const more = document.getElementById('import-preview-more');
+    if (importRecords.length > MAX_PREVIEW) {
+        more.textContent = `Showing first ${MAX_PREVIEW} of ${importRecords.length} rows.`;
+        more.classList.remove('hidden');
+    } else more.classList.add('hidden');
+
+    const btn = document.getElementById('import-confirm-btn');
+    btn.textContent = `Import ${valid.length} Business${valid.length === 1 ? '' : 'es'}`;
+    btn.disabled = valid.length === 0;
+    btn.classList.remove('hidden');
+    document.getElementById('import-back-btn').classList.remove('hidden');
+}
+
+async function runImport() {
+    const valid = importRecords.filter(r => r._issues.length === 0);
+    if (valid.length === 0) return;
+    const skipDuplicates = document.getElementById('import-skip-duplicates').checked;
+
+    document.getElementById('import-step-preview').classList.add('hidden');
+    document.getElementById('import-step-progress').classList.remove('hidden');
+    document.getElementById('import-confirm-btn').classList.add('hidden');
+    document.getElementById('import-back-btn').classList.add('hidden');
+
+    // Strip client-only fields; keep _row so server results reference spreadsheet rows
+    const payload = valid.map(({ _issues, _sheet, ...rec }) => rec);
+
+    const CHUNK = 200;
+    let created = 0, skipped = 0, failed = 0;
+    const issues = [];
+
+    for (let i = 0; i < payload.length; i += CHUNK) {
+        const chunk = payload.slice(i, i + CHUNK);
+        document.getElementById('import-progress-label').textContent = 'Importing…';
+        document.getElementById('import-progress-count').textContent = `${Math.min(i + CHUNK, payload.length)} / ${payload.length}`;
+
+        const res = await api('/businesses/bulk-import', { method: 'POST', body: { businesses: chunk, skip_duplicates: skipDuplicates } });
+        if (res?.success) {
+            created += res.summary.created;
+            skipped += res.summary.skipped;
+            failed += res.summary.failed;
+            issues.push(...res.results.filter(r => r.status !== 'created'));
+        } else {
+            failed += chunk.length;
+            issues.push({ row: '-', name: `Rows ${i + 1}-${i + chunk.length}`, status: 'failed', error: res?.error || 'Request failed' });
+        }
+        document.getElementById('import-progress-bar').style.width = `${Math.min(100, Math.round(((i + CHUNK) / payload.length) * 100))}%`;
+    }
+
+    document.getElementById('import-progress-label').textContent = 'Done';
+    document.getElementById('import-progress-bar').style.width = '100%';
+    document.getElementById('import-results').classList.remove('hidden');
+    document.getElementById('import-results-summary').innerHTML = `
+        <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3"><div class="text-2xl font-bold text-green-600 dark:text-green-400">${created}</div><div class="text-xs text-gray-500">Created</div></div>
+        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3"><div class="text-2xl font-bold text-gray-500">${skipped}</div><div class="text-xs text-gray-500">Skipped (duplicates)</div></div>
+        <div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-3"><div class="text-2xl font-bold text-red-500">${failed}</div><div class="text-xs text-gray-500">Failed</div></div>`;
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const issuesEl = document.getElementById('import-results-issues');
+    if (issues.length) {
+        issuesEl.innerHTML = issues.map(r => `
+            <div class="px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 flex gap-2">
+                <span class="text-gray-400 whitespace-nowrap">Row ${esc(r.row)}</span>
+                <span class="font-medium">${esc(r.name)}</span>
+                <span class="${r.status === 'skipped' ? 'text-gray-400' : 'text-red-500'}">${esc(r.error)}</span>
+            </div>`).join('');
+        issuesEl.classList.remove('hidden');
+    } else issuesEl.classList.add('hidden');
+
+    document.getElementById('import-close-btn').textContent = 'Close';
+    if (created > 0) {
+        toast(`${created} business${created === 1 ? '' : 'es'} imported`);
+        navigateTo(currentPage);
+    }
 }
 
 // ==================== INITIALIZATION ====================

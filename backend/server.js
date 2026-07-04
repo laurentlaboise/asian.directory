@@ -873,6 +873,116 @@ app.post('/api/businesses/bulk-pipeline', authenticateToken, requireRole('admin'
     }
 });
 
+// Auth + admin/editor: bulk import businesses (from spreadsheet upload in admin dashboard)
+app.post('/api/businesses/bulk-import', authenticateToken, requireRole('admin', 'editor'), async (req, res) => {
+    try {
+        const { businesses, skip_duplicates = true } = req.body;
+
+        if (!Array.isArray(businesses) || businesses.length === 0) {
+            return res.status(400).json({ success: false, error: 'businesses must be a non-empty array' });
+        }
+        if (businesses.length > 1000) {
+            return res.status(400).json({ success: false, error: 'Maximum 1000 businesses per import batch' });
+        }
+
+        // Build duplicate lookup (name + city, case-insensitive) from existing records
+        const existing = await dbOperations.getAllBusinesses({});
+        const dupKey = (name, city) => `${String(name || '').trim().toLowerCase()}|${String(city || '').trim().toLowerCase()}`;
+        const seen = new Set(existing.map(b => dupKey(b.name, b.city)));
+
+        const VALID_STATUS = ['active', 'pending', 'inactive'];
+        const VALID_STAGES = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive',
+                              'qualified', 'proposal', 'negotiation', 'on_hold', 'lost', 'churned'];
+        const VALID_PRIORITY = ['low', 'medium', 'high'];
+        const normEnum = (value, valid, fallback) => {
+            const v = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+            return valid.includes(v) ? v : fallback;
+        };
+        const toArray = (v) => Array.isArray(v) ? v.map(x => String(x).trim()).filter(Boolean)
+            : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+
+        const results = [];
+        let created = 0, skipped = 0, failed = 0;
+
+        for (let i = 0; i < businesses.length; i++) {
+            const raw = businesses[i] || {};
+            const rowNum = raw._row || i + 1;
+            const name = String(raw.name || '').trim();
+
+            const missing = ['name', 'category', 'description', 'address']
+                .filter(f => !String(raw[f] || '').trim());
+            if (missing.length > 0) {
+                failed++;
+                results.push({ row: rowNum, name, status: 'failed', error: `Missing required fields: ${missing.join(', ')}` });
+                continue;
+            }
+
+            const key = dupKey(name, raw.city);
+            if (skip_duplicates && seen.has(key)) {
+                skipped++;
+                results.push({ row: rowNum, name, status: 'skipped', error: 'Duplicate (same name and city already exists)' });
+                continue;
+            }
+
+            const year = parseInt(raw.year_established);
+            const business = {
+                name,
+                business_type: String(raw.business_type || '').trim() || null,
+                category: String(raw.category).trim(),
+                description: String(raw.description).trim(),
+                address: String(raw.address).trim(),
+                country: String(raw.country || '').trim() || null,
+                state_province: String(raw.state_province || '').trim() || null,
+                city: String(raw.city || '').trim() || null,
+                postal_code: String(raw.postal_code || '').trim() || null,
+                website: String(raw.website || '').trim() || null,
+                phone: String(raw.phone || '').trim() || null,
+                alt_phone: String(raw.alt_phone || '').trim() || null,
+                email: String(raw.email || '').trim() || null,
+                contact_person: String(raw.contact_person || '').trim() || null,
+                contact_person_title: String(raw.contact_person_title || '').trim() || null,
+                business_hours: raw.business_hours || null,
+                primary_language: String(raw.primary_language || '').trim() || null,
+                year_established: (!isNaN(year) && year >= 1800 && year <= 2100) ? year : null,
+                employee_count: String(raw.employee_count || '').trim() || null,
+                socials: (raw.socials && typeof raw.socials === 'object') ? raw.socials : {},
+                keywords: toArray(raw.keywords),
+                meta_description: String(raw.meta_description || '').trim() || null,
+                target_audience: toArray(raw.target_audience),
+                special_offerings: toArray(raw.special_offerings),
+                status: normEnum(raw.status, VALID_STATUS, 'pending'),
+                pipeline_stage: normEnum(raw.pipeline_stage, VALID_STAGES, 'new_lead'),
+                priority: normEnum(raw.priority, VALID_PRIORITY, 'medium'),
+                source: String(raw.source || '').trim() || 'import',
+                verification_notes: String(raw.verification_notes || '').trim() || null,
+                notes: String(raw.notes || '').trim() || null,
+                created_by: req.user.id
+            };
+
+            try {
+                const id = await dbOperations.addBusiness(business);
+                seen.add(key);
+                created++;
+                results.push({ row: rowNum, name, status: 'created', id });
+            } catch (err) {
+                failed++;
+                console.error(`Bulk import row ${rowNum} failed:`, err.message);
+                results.push({ row: rowNum, name, status: 'failed', error: err.message });
+            }
+        }
+
+        await dbOperations.addAuditLog(
+            req.user.id, 'bulk_import', 'business', null,
+            null, { total: businesses.length, created, skipped, failed }, req.ip
+        );
+
+        res.json({ success: true, summary: { total: businesses.length, created, skipped, failed }, results });
+    } catch (error) {
+        console.error('Error bulk importing businesses:', error);
+        res.status(500).json({ success: false, error: 'Failed to bulk import businesses' });
+    }
+});
+
 // Get all businesses (with optional filters)
 app.get('/api/businesses', async (req, res) => {
     try {
