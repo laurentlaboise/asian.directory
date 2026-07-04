@@ -33,6 +33,10 @@ const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   SEALION_BASE_URL: z.string().url().optional(),
   SEALION_API_KEY: z.string().optional(),
+
+  // Email sender for OTP delivery (Phase 2 verification). Optional in dev (codes are logged);
+  // required in production or Tier-1 verification fails closed.
+  MAIL_FROM: z.string().email().optional(),
   // Model ids kept in config so they can be bumped without a code change.
   LLM_ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
   LLM_GOOGLE_MODEL: z.string().default("gemini-2.5-flash"),
