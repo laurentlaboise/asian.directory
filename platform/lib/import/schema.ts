@@ -38,6 +38,30 @@ export const ImportRecord = z
     lng: z.number().min(-180).max(180).optional(),
     phone: z.string().trim().max(40).optional(),
     website: httpUrl(500).optional(),
+
+    // --- richer profile fields (all optional) ---
+    businessType: z.string().trim().max(100).optional(),
+    address: z.string().trim().max(500).optional(),
+    // socials: platform -> handle/path (NOT a full URL; the app builds the link). Strict keys.
+    socials: z
+      .object({
+        facebook: z.string().trim().max(300).optional(),
+        instagram: z.string().trim().max(300).optional(),
+        tiktok: z.string().trim().max(300).optional(),
+        youtube: z.string().trim().max(300).optional(),
+        linkedin: z.string().trim().max(300).optional(),
+        x: z.string().trim().max(300).optional(),
+        whatsapp: z.string().trim().max(300).optional(),
+      })
+      .strict()
+      .optional(),
+    keywords: z.array(z.string().trim().min(1).max(50)).max(30).optional(),
+    yearEstablished: z.number().int().min(1800).max(2100).optional(),
+    employeeCount: z.string().trim().max(50).optional(),
+    // businessHours: day -> "08:00-17:00" | "closed"
+    businessHours: z.record(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]), z.string().max(40)).optional(),
+    metaDescription: z.string().trim().max(320).optional(),
+
     primaryLanguage: z.enum(["en", "th", "lo", "vi"]).default("en"),
     translations: z
       .array(z.object({ lang: z.enum(["en", "th", "lo", "vi"]), text: z.string().trim().min(1).max(4000) }).strict())
