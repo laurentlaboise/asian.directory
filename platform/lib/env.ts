@@ -25,21 +25,35 @@ const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   SEALION_BASE_URL: z.string().url().optional(),
   SEALION_API_KEY: z.string().optional(),
+  // Model ids kept in config so they can be bumped without a code change.
+  LLM_ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
+  LLM_GOOGLE_MODEL: z.string().default("gemini-2.5-flash"),
+  LLM_SEALION_MODEL: z.string().default("aisingapore/Gemma-SEA-LION-v4-27B-IT"),
 });
 
+type Env = z.infer<typeof schema>;
+
+// Next.js imports route modules during `next build` to collect metadata. We don't want the
+// build to fail just because runtime secrets aren't present in the build environment, so the
+// hard fail-closed check is skipped ONLY during the build phase. At runtime it always enforces.
+const buildPhase = process.env.NEXT_PHASE === "phase-production-build";
 const parsed = schema.safeParse(process.env);
 
-if (!parsed.success) {
+if (!parsed.success && !buildPhase) {
   console.error("❌ Invalid environment variables:", parsed.error.flatten().fieldErrors);
   throw new Error("Invalid or missing environment variables — refusing to boot.");
 }
 
+const data = (parsed.success ? parsed.data : {}) as Env;
+
 // Enforce that the chosen primary LLM actually has a key (fail closed, not at first request).
-if (parsed.data.LLM_PRIMARY === "anthropic" && !parsed.data.ANTHROPIC_API_KEY) {
-  throw new Error("LLM_PRIMARY=anthropic but ANTHROPIC_API_KEY is missing.");
-}
-if (parsed.data.LLM_PRIMARY === "google" && !parsed.data.GOOGLE_GENERATIVE_AI_API_KEY) {
-  throw new Error("LLM_PRIMARY=google but GOOGLE_GENERATIVE_AI_API_KEY is missing.");
+if (!buildPhase) {
+  if (data.LLM_PRIMARY === "anthropic" && !data.ANTHROPIC_API_KEY) {
+    throw new Error("LLM_PRIMARY=anthropic but ANTHROPIC_API_KEY is missing.");
+  }
+  if (data.LLM_PRIMARY === "google" && !data.GOOGLE_GENERATIVE_AI_API_KEY) {
+    throw new Error("LLM_PRIMARY=google but GOOGLE_GENERATIVE_AI_API_KEY is missing.");
+  }
 }
 
-export const env = parsed.data;
+export const env = data;

@@ -21,12 +21,12 @@ const sealion = env.SEALION_BASE_URL
 
 export function primaryModel(): LanguageModel {
   return env.LLM_PRIMARY === "google"
-    ? google("gemini-2.5-flash")
-    : anthropic("claude-sonnet-5");
+    ? google(env.LLM_GOOGLE_MODEL)
+    : anthropic(env.LLM_ANTHROPIC_MODEL);
 }
 
 /** SEA-language specialist fallback; null if not configured. */
 export function fallbackModel(): LanguageModel | null {
   // Reasoning ("-R") default OFF for synthesis — see ADR-003 latency/cost note.
-  return sealion ? sealion("aisingapore/Gemma-SEA-LION-v4-27B-IT") : null;
+  return sealion ? sealion(env.LLM_SEALION_MODEL) : null;
 }

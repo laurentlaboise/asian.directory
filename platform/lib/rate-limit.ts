@@ -32,12 +32,21 @@ export function rateLimit(key: string, limit: number, windowMs: number) {
 }
 
 /**
- * Client IP from the proxy chain. Railway sets X-Forwarded-For; take the left-most entry.
- * (The original backend never configured trust-proxy, so its rate limiting and audit IPs
- * were wrong — here the IP source is explicit.)
+ * Client IP behind a trusted proxy.
+ *
+ * We do NOT trust the left-most X-Forwarded-For entry — that value is client-appendable and
+ * spoofing it would hand an attacker a fresh rate-limit bucket per request. We trust the
+ * proxy-set `x-real-ip` (Railway overwrites it), and only fall back to the RIGHT-most XFF
+ * entry (the hop closest to our server) when x-real-ip is absent.
  */
 export function clientIp(headers: Headers): string {
+  const realIp = headers.get("x-real-ip")?.trim();
+  if (realIp) return realIp;
+
   const xff = headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
-  return headers.get("x-real-ip")?.trim() || "unknown";
+  if (xff) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1]!;
+  }
+  return "unknown";
 }

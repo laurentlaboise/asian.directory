@@ -193,13 +193,20 @@ returns setof businesses
 language sql stable
 as $$
     with semantic as (
-        select be.business_id,
-               row_number() over (order by be.embedding <=> query_embedding) as rank_ix
-        from business_embeddings be
-        join businesses b on b.id = be.business_id
-        where (filter_city_id is null or b.city_id = filter_city_id)
-          and b.verification_tier >= 0
-        order by be.embedding <=> query_embedding
+        -- Collapse the per-(business,lang) embedding rows to ONE row per business (its best/
+        -- nearest language vector) BEFORE ranking, so a business can't appear 2-4x and skew RRF.
+        select business_id,
+               row_number() over (order by dist) as rank_ix
+        from (
+            select distinct on (be.business_id)
+                   be.business_id,
+                   be.embedding <=> query_embedding as dist
+            from business_embeddings be
+            join businesses b on b.id = be.business_id
+            where (filter_city_id is null or b.city_id = filter_city_id)
+            order by be.business_id, be.embedding <=> query_embedding
+        ) d
+        order by dist
         limit least(match_count, 30) * 2
     ),
     lexical as (

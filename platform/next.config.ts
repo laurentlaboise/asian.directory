@@ -1,23 +1,8 @@
 import type { NextConfig } from "next";
 
-// Security baseline (headers). CSP is intentionally strict: no 'unsafe-inline' for scripts.
-// If a third-party script is ever needed, add a nonce/hash rather than relaxing this.
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'", // Tailwind injects inline styles; scripts stay locked down
-  "img-src 'self' data: https:",
-  "connect-src 'self'",
-  "font-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
-].join("; ");
-
+// Static security headers. NOTE: Content-Security-Policy is NOT here — it needs a per-request
+// nonce so Next.js's own inline scripts are allowed, so it's set in middleware.ts instead.
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
