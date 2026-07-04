@@ -29,6 +29,8 @@ export default async function BusinessPage({ params }: { params: Promise<Params>
   const b = await getBusinessBySlug(slug);
   if (!b) notFound();
 
+  const socials = socialLinks(b.socials);
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
