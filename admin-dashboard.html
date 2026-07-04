@@ -134,6 +134,10 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
                 Pipeline
             </a>
+            <a href="#" data-page="leadgen" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                Lead Generator
+            </a>
             <a href="#" data-page="users" class="sidebar-link flex items-center gap-3 px-4 py-2.5 text-sm" id="nav-users">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                 Users
@@ -827,7 +831,7 @@ function navigateTo(page) {
     currentPage = page;
     document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
     document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
-    const pageTitles = { dashboard: 'Dashboard', businesses: 'Businesses', pipeline: 'Pipeline', activities: 'Activities', automations: 'Automations', intelligence: 'Intelligence', users: 'Users', apikeys: 'API Keys', analytics: 'Analytics', audit: 'Audit Log' };
+    const pageTitles = { dashboard: 'Dashboard', businesses: 'Businesses', pipeline: 'Pipeline', leadgen: 'Lead Generator', activities: 'Activities', automations: 'Automations', intelligence: 'Intelligence', users: 'Users', apikeys: 'API Keys', analytics: 'Analytics', audit: 'Audit Log' };
     document.getElementById('page-title').textContent = pageTitles[page] || page.charAt(0).toUpperCase() + page.slice(1);
     document.getElementById('sidebar').classList.remove('open');
     renderPage(page);
@@ -856,6 +860,7 @@ async function renderPage(page) {
         case 'dashboard': await renderDashboard(main); break;
         case 'businesses': await renderBusinesses(main); break;
         case 'pipeline': await renderPipeline(main); break;
+        case 'leadgen': await renderLeadGen(main); break;
         case 'activities': await renderActivities(main); break;
         case 'automations': await renderAutomations(main); break;
         case 'intelligence': await renderIntelligence(main); break;
@@ -2365,6 +2370,219 @@ async function runImport() {
         toast(`${created} business${created === 1 ? '' : 'es'} imported`);
         navigateTo(currentPage);
     }
+}
+
+// ==================== LEAD GENERATOR (Google services) ====================
+let leadgenResults = [];
+let leadgenLocations = [];
+const escHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+async function renderLeadGen(el) {
+    const [config, connections] = await Promise.all([api('/google/config'), api('/google/connections')]);
+    const cfg = config?.success ? config : { maps_configured: false, oauth_configured: false };
+    const conns = connections?.data || [];
+
+    el.innerHTML = `
+    <div class="space-y-6">
+        <!-- Google connection status -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <div class="flex flex-wrap items-center gap-3 mb-3">
+                <h3 class="font-semibold">Google Services</h3>
+                <span class="badge ${cfg.maps_configured ? 'badge-active' : 'badge-inactive'}">Maps API: ${cfg.maps_configured ? 'configured' : 'not configured'}</span>
+                <span class="badge ${cfg.oauth_configured ? 'badge-active' : 'badge-inactive'}">OAuth: ${cfg.oauth_configured ? 'configured' : 'not configured'}</span>
+                <div class="flex-1"></div>
+                <button onclick="connectGoogle()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium ${cfg.oauth_configured ? '' : 'opacity-50 cursor-not-allowed'}" ${cfg.oauth_configured ? '' : 'disabled title="Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the backend"'}>Connect Google Business</button>
+            </div>
+            ${conns.length === 0
+                ? '<p class="text-sm text-gray-400">No Google account connected yet. Connect one to pull your Business Profile locations.</p>'
+                : `<div class="space-y-2">${conns.map(c => `
+                    <div class="flex items-center gap-3 text-sm bg-gray-50 dark:bg-gray-700/50 rounded-lg px-3 py-2">
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span class="font-medium">${escHtml(c.google_email)}</span>
+                        <span class="text-xs text-gray-400">connected ${formatDate(c.created_at)}</span>
+                        <div class="flex-1"></div>
+                        <button onclick="loadGbpLocations(${c.id})" class="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">Load locations</button>
+                        <button onclick="disconnectGoogle(${c.id}, '${escHtml(c.google_email)}')" class="px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">Disconnect</button>
+                    </div>`).join('')}</div>`}
+            ${cfg.maps_configured && cfg.oauth_configured ? '' : `
+                <p class="text-xs text-gray-400 mt-3">Setup: create credentials in Google Cloud Console, then set <span class="font-mono">GOOGLE_MAPS_API_KEY</span> (Places API New), <span class="font-mono">GOOGLE_CLIENT_ID</span> and <span class="font-mono">GOOGLE_CLIENT_SECRET</span> on the backend. OAuth redirect URI: <span class="font-mono">${escHtml(cfg.redirect_uri || '')}</span></p>`}
+        </div>
+
+        <!-- Business Profile locations -->
+        <div id="gbp-panel" class="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <div class="flex items-center gap-3 mb-3">
+                <h3 class="font-semibold">Your Business Profile Locations</h3>
+                <div class="flex-1"></div>
+                <button id="gbp-import-btn" onclick="importSelectedLeads('gbp')" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">Import selected</button>
+            </div>
+            <div id="gbp-results" class="overflow-x-auto"></div>
+        </div>
+
+        <!-- Maps lead finder -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="font-semibold mb-3">Google Maps Lead Finder</h3>
+            <div class="flex flex-wrap gap-3 mb-4">
+                <input id="leadgen-query" type="text" placeholder='e.g. "coffee shops in Vientiane"' class="flex-1 min-w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                <input id="leadgen-category" type="text" placeholder="Category override (optional)" class="w-56 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                <button onclick="searchMapsLeads()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium ${cfg.maps_configured ? '' : 'opacity-50 cursor-not-allowed'}" ${cfg.maps_configured ? '' : 'disabled title="Set GOOGLE_MAPS_API_KEY on the backend"'}>Search Maps</button>
+            </div>
+            <div id="leadgen-status" class="text-sm text-gray-400 mb-3">Search Google Maps for businesses and import them as leads in one click.</div>
+            <div id="leadgen-results" class="overflow-x-auto"></div>
+            <div id="leadgen-actions" class="hidden mt-3 flex gap-3 items-center">
+                <button onclick="importSelectedLeads('maps')" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">Import selected as leads</button>
+                <label class="flex items-center gap-2 text-xs text-gray-500"><input id="leadgen-select-all" type="checkbox" onchange="toggleAllLeads(this.checked)" class="rounded">Select all new</label>
+            </div>
+        </div>
+
+        <!-- Ad generator -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="font-semibold mb-3">Ad Copy Generator</h3>
+            <div class="flex flex-wrap gap-3 mb-4">
+                <select id="ads-business" class="flex-1 min-w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"><option value="">Loading businesses…</option></select>
+                <button onclick="generateAds()" class="px-4 py-2 text-sm bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-medium">Generate Ad Copy</button>
+            </div>
+            <div id="ads-output" class="text-sm text-gray-400">Pick a listing to generate Google Ads (RSA) and Facebook-ready copy.</div>
+        </div>
+    </div>`;
+
+    // Populate ad generator dropdown
+    api('/businesses').then(res => {
+        const sel = document.getElementById('ads-business');
+        if (!sel) return;
+        const list = (res?.data || []).slice(0, 500);
+        sel.innerHTML = '<option value="">Select a business…</option>' +
+            list.map(b => `<option value="${b.id}">${escHtml(b.name)}${b.city ? ' — ' + escHtml(b.city) : ''}</option>`).join('');
+    });
+}
+
+async function connectGoogle() {
+    const res = await api('/google/oauth/url');
+    if (!res?.success) { toast(res?.error || 'Could not start Google connection', 'error'); return; }
+    const popup = window.open(res.url, 'google-oauth', 'width=520,height=680');
+    const onMsg = (e) => {
+        if (e.data?.type === 'google-oauth') {
+            window.removeEventListener('message', onMsg);
+            if (e.data.ok) { toast('Google account connected'); navigateTo('leadgen'); }
+            else toast('Google connection failed', 'error');
+        }
+    };
+    window.addEventListener('message', onMsg);
+    if (!popup) toast('Popup blocked — allow popups for this site', 'error');
+}
+
+async function disconnectGoogle(id, email) {
+    if (!confirm(`Disconnect ${email}? Stored tokens will be revoked.`)) return;
+    const res = await api(`/google/connections/${id}`, { method: 'DELETE' });
+    if (res?.success) { toast(res.message || 'Disconnected'); navigateTo('leadgen'); }
+    else toast(res?.error || 'Failed to disconnect', 'error');
+}
+
+function leadRowsHtml(rows, prefix) {
+    return `
+    <table class="w-full text-xs">
+        <thead class="bg-gray-50 dark:bg-gray-700/50"><tr>
+            <th class="px-3 py-2"></th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Name</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Category</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Address</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Rating</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Contact</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
+        </tr></thead>
+        <tbody>${rows.map((r, i) => `
+            <tr class="border-t border-gray-100 dark:border-gray-700 ${r.already_imported ? 'opacity-50' : ''}">
+                <td class="px-3 py-2"><input type="checkbox" class="${prefix}-lead-cb rounded" data-idx="${i}" ${r.already_imported ? 'disabled' : ''}></td>
+                <td class="px-3 py-2 font-medium">${r.maps_url ? `<a href="${escHtml(r.maps_url)}" target="_blank" rel="noopener" class="hover:text-yellow-500 underline decoration-dotted">${escHtml(r.name)}</a>` : escHtml(r.name)}</td>
+                <td class="px-3 py-2">${escHtml(r.category || '')}</td>
+                <td class="px-3 py-2 text-gray-500">${escHtml(r.address || '')}</td>
+                <td class="px-3 py-2 whitespace-nowrap">${r.rating ? `${r.rating}★ (${r.review_count})` : '-'}</td>
+                <td class="px-3 py-2 text-gray-500">${escHtml(r.phone || '')}${r.website ? `${r.phone ? ' · ' : ''}<a href="${escHtml(r.website)}" target="_blank" rel="noopener" class="underline decoration-dotted">site</a>` : ''}</td>
+                <td class="px-3 py-2">${r.already_imported ? '<span class="badge badge-inactive">imported</span>' : '<span class="badge badge-active">new</span>'}</td>
+            </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function searchMapsLeads() {
+    const query = document.getElementById('leadgen-query').value.trim();
+    if (!query) { toast('Enter a search, e.g. "restaurants in Bangkok"', 'error'); return; }
+    const status = document.getElementById('leadgen-status');
+    status.textContent = 'Searching Google Maps…';
+    const res = await api('/google/maps/search', { method: 'POST', body: { query, max_results: 20 } });
+    if (!res?.success) { status.textContent = ''; toast(res?.error || 'Search failed', 'error'); return; }
+    leadgenResults = res.data;
+    const fresh = leadgenResults.filter(r => !r.already_imported).length;
+    status.textContent = `${leadgenResults.length} result(s) — ${fresh} not yet in your directory.`;
+    document.getElementById('leadgen-results').innerHTML = leadRowsHtml(leadgenResults, 'maps');
+    document.getElementById('leadgen-actions').classList.toggle('hidden', leadgenResults.length === 0);
+    document.getElementById('leadgen-select-all').checked = false;
+}
+
+function toggleAllLeads(checked) {
+    document.querySelectorAll('.maps-lead-cb:not(:disabled)').forEach(cb => { cb.checked = checked; });
+}
+
+async function loadGbpLocations(connectionId) {
+    const panel = document.getElementById('gbp-panel');
+    const out = document.getElementById('gbp-results');
+    panel.classList.remove('hidden');
+    out.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading locations from Google Business Profile…</p>';
+    const res = await api(`/google/business/locations?connection_id=${connectionId}`);
+    if (!res?.success) { out.innerHTML = `<p class="text-sm text-red-500 py-2">${escHtml(res?.error || 'Failed to load locations')}</p>`; return; }
+    leadgenLocations = res.data;
+    out.innerHTML = leadgenLocations.length
+        ? leadRowsHtml(leadgenLocations, 'gbp')
+        : '<p class="text-sm text-gray-400 py-2">No locations found on this Google account.</p>';
+}
+
+async function importSelectedLeads(kind) {
+    const rows = kind === 'maps' ? leadgenResults : leadgenLocations;
+    const selected = [...document.querySelectorAll(`.${kind}-lead-cb:checked`)].map(cb => rows[parseInt(cb.dataset.idx)]);
+    if (selected.length === 0) { toast('Select at least one business', 'error'); return; }
+    const defaults = {};
+    const catOverride = document.getElementById('leadgen-category')?.value.trim();
+    if (kind === 'maps' && catOverride) defaults.category = catOverride;
+    const res = await api('/google/import-leads', {
+        method: 'POST',
+        body: { leads: selected, source: kind === 'maps' ? 'google_maps' : 'google_business', defaults }
+    });
+    if (!res?.success) { toast(res?.error || 'Import failed', 'error'); return; }
+    const s = res.summary;
+    toast(`${s.created} imported${s.skipped ? `, ${s.skipped} already existed` : ''}${s.failed ? `, ${s.failed} failed` : ''}`, s.failed ? 'error' : 'success');
+    if (kind === 'maps') searchMapsLeads(); else navigateTo('leadgen');
+}
+
+async function generateAds() {
+    const id = document.getElementById('ads-business').value;
+    if (!id) { toast('Select a business first', 'error'); return; }
+    const out = document.getElementById('ads-output');
+    out.innerHTML = '<p class="text-gray-400">Generating…</p>';
+    const res = await api('/ads/generate', { method: 'POST', body: { business_id: parseInt(id) } });
+    if (!res?.success) { out.innerHTML = ''; toast(res?.error || 'Generation failed', 'error'); return; }
+    const d = res.data;
+    const copyBtn = (text) => `<button onclick="navigator.clipboard.writeText(this.dataset.txt).then(()=>toast('Copied'))" data-txt="${escHtml(text)}" class="ml-2 px-2 py-0.5 text-[10px] bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 align-middle">copy</button>`;
+    const item = (text, max) => `<li class="flex items-start justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700 last:border-0"><span>${escHtml(text)}</span><span class="whitespace-nowrap text-[10px] text-gray-400">${text.length}/${max}${copyBtn(text)}</span></li>`;
+    out.innerHTML = `
+        <div class="grid md:grid-cols-2 gap-4 text-sm">
+            <div class="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <h4 class="font-semibold mb-2">Google Ads — Responsive Search Ad</h4>
+                <p class="text-xs text-gray-400 mb-1">Headlines (max 30 chars)</p>
+                <ul class="mb-3">${d.google_ads.headlines.map(h => item(h, 30)).join('')}</ul>
+                <p class="text-xs text-gray-400 mb-1">Descriptions (max 90 chars)</p>
+                <ul class="mb-3">${d.google_ads.descriptions.map(x => item(x, 90)).join('')}</ul>
+                <p class="text-xs text-gray-400">Final URL: <a class="underline" target="_blank" rel="noopener" href="${escHtml(d.google_ads.final_url)}">${escHtml(d.google_ads.final_url)}</a>${copyBtn(d.google_ads.final_url)}</p>
+                <p class="text-xs text-gray-400 mt-2">Suggested keywords: ${d.suggested_google_keywords.map(k => `<span class="inline-block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 mr-1 mb-1">${escHtml(k)}</span>`).join('')}</p>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <h4 class="font-semibold mb-2">Facebook / Instagram</h4>
+                <p class="text-xs text-gray-400 mb-1">Primary text (max 125 chars)</p>
+                <ul class="mb-3">${item(d.facebook.primary_text, 125)}</ul>
+                <p class="text-xs text-gray-400 mb-1">Headline (max 40 chars)</p>
+                <ul class="mb-3">${item(d.facebook.headline, 40)}</ul>
+                ${d.facebook.description ? `<p class="text-xs text-gray-400 mb-1">Description</p><ul class="mb-3">${item(d.facebook.description, 30)}</ul>` : ''}
+                <p class="text-xs text-gray-400">Call to action: <span class="font-mono">${escHtml(d.facebook.cta)}</span></p>
+            </div>
+        </div>`;
 }
 
 // ==================== INITIALIZATION ====================
