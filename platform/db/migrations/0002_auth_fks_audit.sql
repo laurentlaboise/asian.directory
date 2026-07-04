@@ -21,14 +21,23 @@ create index if not exists idx_audit_user    on audit_log(user_id);
 create index if not exists idx_audit_entity  on audit_log(entity_type, entity_id);
 
 -- Hard FKs to Better Auth's user table ("user" is a reserved word -> must be quoted).
-alter table businesses  add constraint fk_businesses_owner
-    foreign key (owner_id) references "user"(id) on delete set null;
-alter table profiles    add constraint fk_profiles_user
-    foreign key (user_id)  references "user"(id) on delete cascade;
-alter table leads       add constraint fk_leads_user
-    foreign key (user_id)  references "user"(id) on delete set null;
-alter table audit_log   add constraint fk_audit_user
-    foreign key (user_id)  references "user"(id) on delete set null;
+-- Postgres has no ADD CONSTRAINT IF NOT EXISTS, so each is guarded to stay re-runnable.
+do $$ begin
+    alter table businesses add constraint fk_businesses_owner
+        foreign key (owner_id) references "user"(id) on delete set null;
+exception when duplicate_object then null; end $$;
+do $$ begin
+    alter table profiles add constraint fk_profiles_user
+        foreign key (user_id) references "user"(id) on delete cascade;
+exception when duplicate_object then null; end $$;
+do $$ begin
+    alter table leads add constraint fk_leads_user
+        foreign key (user_id) references "user"(id) on delete set null;
+exception when duplicate_object then null; end $$;
+do $$ begin
+    alter table audit_log add constraint fk_audit_user
+        foreign key (user_id) references "user"(id) on delete set null;
+exception when duplicate_object then null; end $$;
 
 -- Owner lookups (merchant dashboard "my businesses").
 create index if not exists idx_businesses_owner on businesses(owner_id);

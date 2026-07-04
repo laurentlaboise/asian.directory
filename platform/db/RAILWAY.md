@@ -73,11 +73,12 @@ The full order matters — `0002` adds FKs onto Better Auth's `user` table, so a
 migrated between `0001` and `0002` (the runner is idempotent, so re-running it is safe):
 
 ```
-npm run db:migrate      # applies 0001 (domain tables + hybrid_search)
-npm run auth:migrate     # Better Auth creates user/session/account/verification  (add --config lib/auth.ts if needed)
-npm run db:migrate       # now applies 0002 (audit_log + FKs to "user")
-npm run db:seed          # ingests the Vientiane seed (needs EMBEDDINGS_URL live)
+npm run db:migrate:core  # applies ONLY 0001 (domain tables + hybrid_search)
+npm run auth:migrate      # Better Auth creates user/session/account/verification  (add --config lib/auth.ts if needed)
+npm run db:migrate        # now applies 0002 (audit_log + FKs to "user")
+npm run db:seed           # ingests the Vientiane seed (needs EMBEDDINGS_URL live)
 ```
+(Running `db:migrate:core` first avoids 0002 failing on a fresh DB where `"user"` doesn't exist yet.)
 
 ## 7. Verify (before any app boot)
 

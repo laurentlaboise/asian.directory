@@ -18,7 +18,12 @@ await client.query(
 const applied = new Set(
   (await client.query("select name from _migrations")).rows.map((r) => r.name),
 );
-const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+
+// Optional filename args restrict which migrations run (e.g. only 0001 before auth:migrate).
+// With no args, all pending migrations are applied in filename order.
+const only = process.argv.slice(2);
+let files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+if (only.length) files = files.filter((f) => only.includes(f));
 
 for (const file of files) {
   if (applied.has(file)) continue;

@@ -10,8 +10,9 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:core": "node scripts/migrate.mjs 0001_init.sql",
     "db:seed": "tsx scripts/seed.ts",
-    "auth:migrate": "better-auth migrate"
+    "auth:migrate": "npx --yes @better-auth/cli migrate"
   },
   "dependencies": {
     "next": "^15.1.0",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "tsx": "^4.19.0",
+    "@better-auth/cli": "^1.1.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
