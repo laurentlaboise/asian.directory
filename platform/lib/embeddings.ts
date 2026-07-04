@@ -30,6 +30,9 @@ export async function embedQuery(text: string): Promise<number[]> {
   return vec;
 }
 
+/** Alias for embedding passages/documents at ingest time. BGE-M3 needs no query/passage prefix. */
+export const embedText = embedQuery;
+
 /** pgvector text literal for a parameterized `$n::vector` bind. */
 export function toVectorLiteral(vec: number[]): string {
   return `[${vec.join(",")}]`;

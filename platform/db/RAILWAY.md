@@ -67,12 +67,16 @@ DATABASE_URL="postgresql://postgres:…@<host>.proxy.rlwy.net:<port>/railway" \
   node platform/scripts/migrate.mjs
 ```
 
-## 6. Create the Better Auth tables
+## 6. Create the Better Auth tables, then finish migrations + seed
 
-Better Auth owns `user` / `session` / `account` / `verification`. From `platform/` with the app
-env present (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`):
+The full order matters — `0002` adds FKs onto Better Auth's `user` table, so auth must be
+migrated between `0001` and `0002` (the runner is idempotent, so re-running it is safe):
+
 ```
-npx @better-auth/cli migrate        # add --config lib/auth.ts if it can't auto-find the config
+npm run db:migrate      # applies 0001 (domain tables + hybrid_search)
+npm run auth:migrate     # Better Auth creates user/session/account/verification  (add --config lib/auth.ts if needed)
+npm run db:migrate       # now applies 0002 (audit_log + FKs to "user")
+npm run db:seed          # ingests the Vientiane seed (needs EMBEDDINGS_URL live)
 ```
 
 ## 7. Verify (before any app boot)

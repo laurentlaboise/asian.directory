@@ -12,7 +12,9 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 | **SEC-4 Token in `localStorage` / URL** | Sessions are **httpOnly, secure, sameSite** cookies via Better Auth — not readable by JS, not placed in URLs. | `lib/auth.ts` |
 | **SEC-5 `rejectUnauthorized:false` in prod** | DB SSL is explicit; cert-verify is the `require` mode, and the insecure mode is opt-in + discouraged. | `lib/db.ts`, `.env.example` |
 | **SEC-6 No `trust proxy`** (wrong IPs / broken rate limit) | `clientIp()` trusts only the proxy-set `x-real-ip` (falls back to the RIGHT-most XFF hop) — never the client-spoofable left-most XFF, so a fresh-bucket bypass isn't possible. | `lib/rate-limit.ts` |
-| **SEC-7 No role gate on writes** *(planned)* | Design: mutations validate the server-side session (`auth.api.getSession`) + role; middleware is only an optimistic redirect, never the boundary. **No protected write routes exist yet** — this lands with the Phase-2 merchant portal. | `middleware.ts` today; per-route checks TBD |
+| **SEC-7 Role/session gate on writes** | First protected write route (claim) validates the server-side session via `requireUser()` (`lib/session.ts`) before any mutation; middleware stays an optimistic redirect only. `getRole`/`hasRole` available for role checks. | `lib/session.ts`, `app/api/businesses/[id]/claim/route.ts` |
+| **Claim race / double-claim** | Ownership transition runs under `SELECT … FOR UPDATE` in a transaction; a second concurrent claim sees the taken row and gets `409`. | `app/api/businesses/[id]/claim/route.ts` |
+| **Audit logging** | Security-relevant actions (claims now; auth events + lead claims as they land) append to `audit_log` via `logAudit()`, on a separate connection so it can't roll back the business op. | `lib/audit.ts`, `db/…/0002_auth_fks_audit.sql` |
 | **SEC-8 CSP disabled** | **Nonce-based CSP** (middleware) + HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`. | `middleware.ts`, `next.config.ts` |
 | **SQL injection** | All queries fully **parameterized**; user input never string-concatenated into SQL. | `app/api/search/route.ts` |
 | **Info-leak error handling** | API returns generic errors; detail is `console.error`-logged only. | `app/api/search/route.ts` |
@@ -21,9 +23,12 @@ recur. Kept in the repo so the baseline is reviewable and enforceable, not triba
 ## Still to do (tracked, not silently skipped)
 
 - Rate limiter is **in-memory** (single replica) — move to Redis/Upstash before horizontal scale.
-- Add a hard FK from `businesses.owner_id` → Better Auth `user(id)` in migration `0002` (after the
-  auth tables exist).
-- Per-route session+role enforcement helpers for the merchant dashboard (Phase 2).
+- Apply `requireUser()`/`hasRole()` to every remaining protected route as the merchant dashboard
+  and lead surfaces land (claim route is the first).
+- **Lead-object visibility filters** — once leads exist, restrict reads so a merchant sees only
+  leads routed to their own claimed businesses (row-scoping in the query, not the client).
+- Extend `audit_log` coverage to auth events (login/logout/failed-login via Better Auth hooks)
+  and lead claims.
 - CSRF: Better Auth cookies are `sameSite=lax`; add explicit CSRF tokens for any state-changing
   form posts that could be triggered cross-site.
 - Secret management: inject via Railway variables; never commit `.env`. (Env is validated
