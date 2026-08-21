@@ -408,7 +408,9 @@ app.get('/api', (req, res) => {
             publicApi: {
                 businesses: 'GET /api/v1/businesses (requires API key)',
                 search: 'GET /api/v1/businesses/search (requires API key)',
-                get: 'GET /api/v1/businesses/:id (requires API key)'
+                get: 'GET /api/v1/businesses/:id (requires API key)',
+                businessSubmissions: 'POST /api/public/business-submissions',
+                dataDeletionRequests: 'POST /api/public/data-deletion-requests'
             }
         }
     });
@@ -2650,6 +2652,87 @@ app.post('/api/public/business-submissions', publicSubmitLimiter, async (req, re
     } catch (error) {
         console.error('Error handling public submission:', error);
         res.status(500).json({ success: false, error: 'Failed to submit. Please try again later.' });
+    }
+});
+
+const ALLOWED_DELETION_SCOPES = [
+    'search_logs',
+    'submission',
+    'contact_details',
+    'listing_takedown'
+];
+
+// Public data-deletion request (reviewed by operators; does not wipe the directory)
+app.post('/api/public/data-deletion-requests', publicSubmitLimiter, async (req, res) => {
+    try {
+        const b = req.body || {};
+        if (b.company_website) {
+            return res.json({
+                success: true,
+                message: 'Thank you. We received your request and will reply within 7 days.'
+            });
+        }
+
+        const name = String(b.name || '').trim();
+        const email = String(b.email || '').trim();
+        const details = String(b.details || '').trim();
+        const listingName = String(b.listing_name || '').trim();
+        const listingCity = String(b.listing_city || '').trim();
+        const listingCountry = String(b.listing_country || '').trim();
+        const queryText = String(b.query || '').trim();
+        const queryDate = String(b.query_date || '').trim();
+        const rawScopes = Array.isArray(b.scopes) ? b.scopes : String(b.scopes || '').split(',');
+        const scopes = [...new Set(rawScopes.map(s => String(s || '').trim()).filter(s => ALLOWED_DELETION_SCOPES.includes(s)))];
+
+        if (!name || name.length > 120) {
+            return res.status(400).json({ success: false, error: 'Please give your name (max 120 characters).' });
+        }
+        if (!email || email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, error: 'Please give a valid email so we can reply.' });
+        }
+        if (details.length > 2000) {
+            return res.status(400).json({ success: false, error: 'Details are too long (max 2000 characters).' });
+        }
+        for (const [field, value, maxLen] of [
+            ['listing_name', listingName, 100],
+            ['listing_city', listingCity, 100],
+            ['listing_country', listingCountry, 100],
+            ['query', queryText, 500],
+            ['query_date', queryDate, 40]
+        ]) {
+            if (value.length > maxLen) {
+                return res.status(400).json({ success: false, error: `${field} is too long (max ${maxLen} characters)` });
+            }
+        }
+        if (scopes.length === 0 && !details) {
+            return res.status(400).json({ success: false, error: 'Tell us what you want deleted.' });
+        }
+        if (scopes.includes('listing_takedown') && !listingName) {
+            return res.status(400).json({ success: false, error: 'For a listing takedown, include the listing name.' });
+        }
+
+        const request = {
+            name,
+            email,
+            scopes,
+            listing_name: listingName || null,
+            listing_city: listingCity || null,
+            listing_country: listingCountry || null,
+            query: queryText || null,
+            query_date: queryDate || null,
+            details: details || null
+        };
+
+        await dbOperations.addAuditLog(null, 'data_deletion_request', 'privacy', null, null, request, req.ip);
+        console.log(`Data deletion request from ${email} scopes=${scopes.join(',') || 'details'} listing=${listingName || '-'}`);
+
+        res.json({
+            success: true,
+            message: 'Thank you. We received your request. We aim to acknowledge it within 7 days and finish within 30 days.'
+        });
+    } catch (error) {
+        console.error('Error handling data deletion request:', error);
+        res.status(500).json({ success: false, error: 'Failed to submit. Please email privacy@asian.directory.' });
     }
 });
 

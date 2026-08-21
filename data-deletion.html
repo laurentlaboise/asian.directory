@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to delete your data — asian.directory</title>
+    <meta name="description" content="Request deletion of your search logs, listing submission, or personal details on asian.directory.">
+    <meta name="theme-color" content="#FACC15">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <meta property="og:title" content="How to delete your data — asian.directory">
+    <meta property="og:description" content="Request deletion of personal data or a listing takedown on asian.directory.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://asian.directory/data-deletion.html">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; }
+        ::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-track { background: #1f2937; }
+        .dark ::-webkit-scrollbar-thumb { background: #4b5563; }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-200">
+    <div class="w-full max-w-3xl mx-auto px-4 py-10 sm:py-14">
+        <header class="mb-8">
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                <a href="index.html" class="hover:text-yellow-500 transition-colors">asian.directory</a>
+            </p>
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 dark:text-gray-100">How to delete your data</h1>
+            <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Effective 22 August 2026.</p>
+        </header>
+
+        <article class="space-y-8 text-[15px] leading-relaxed">
+            <p>
+                There is no public user account on asian.directory, and no “delete account” button.
+                People use the site to search and (optionally) to submit a listing.
+                You can still ask us to delete <strong>your personal data</strong>.
+            </p>
+
+            <section>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-3">What you can ask us to delete</h2>
+                <ul class="list-disc pl-5 space-y-2">
+                    <li>Search or chat logs we can tie to you (the query you typed, and the results we saved with it).</li>
+                    <li>A listing you submitted that is still in review.</li>
+                    <li>Personal contact details we hold about you (for example your email, phone, or name on a submission).</li>
+                    <li>A published listing that identifies you — this is a <strong>takedown request</strong> we review. We do not silently wipe the whole directory.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-3">What stays in the directory</h2>
+                <p>
+                    asian.directory operates the compiled public directory of business information
+                    (name, category, city, public address, public phone, website, description).
+                    Those public business facts are not a private user account.
+                    We will remove or correct <em>personal</em> data that identifies you.
+                    We will not treat a request as permission to erase every public business we compiled
+                    that is unrelated to you.
+                </p>
+            </section>
+
+            <section class="rounded-xl border border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-400/10 p-5 sm:p-6">
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">How to request it</h2>
+                <p>
+                    Use the form below. We aim to <strong>acknowledge within 7 days</strong> and
+                    <strong>finish within 30 days</strong>.
+                    To confirm it is you, email from the same address used on a submission when you can.
+                    We do not ask for extra ID documents unless we cannot match the record.
+                </p>
+                <p class="mt-3 text-sm">
+                    You can also email
+                    <a href="mailto:privacy@asian.directory?subject=Deletion%20request" class="text-yellow-700 dark:text-yellow-400 hover:underline font-medium">privacy@asian.directory</a>
+                    with the subject “Deletion request”.
+                </p>
+            </section>
+
+            <section>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Deletion request form</h2>
+                <form id="deletion-form" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-5 sm:p-6 space-y-4">
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" for="del-name">Your name <span class="text-red-400">*</span></label>
+                            <input id="del-name" name="name" required maxlength="120" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" for="del-email">Email we can reply to <span class="text-red-400">*</span></label>
+                            <input id="del-email" name="email" type="email" required maxlength="200" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <fieldset>
+                        <legend class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">What should we delete? <span class="text-red-400">*</span></legend>
+                        <div class="space-y-2 text-sm">
+                            <label class="flex items-start gap-2">
+                                <input type="checkbox" name="scopes" value="search_logs" class="mt-1">
+                                <span>Search or chat logs tied to me</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                                <input type="checkbox" name="scopes" value="submission" class="mt-1">
+                                <span>A listing I submitted (still in review)</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                                <input type="checkbox" name="scopes" value="contact_details" class="mt-1">
+                                <span>My personal contact details</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                                <input type="checkbox" name="scopes" value="listing_takedown" class="mt-1">
+                                <span>A published listing that identifies me (takedown request)</span>
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">If this is about a listing</p>
+                        <div class="grid sm:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" for="del-listing-name">Listing name</label>
+                                <input id="del-listing-name" name="listing_name" maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" for="del-listing-city">City</label>
+                                <input id="del-listing-city" name="listing_city" maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" for="del-listing-country">Country</label>
+                                <input id="del-listing-country" name="listing_country" maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">If this is about a search (optional)</p>
+                        <div class="grid sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" for="del-query">Query you typed</label>
+                                <input id="del-query" name="query" maxlength="500" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" for="del-query-date">Approximate date</label>
+                                <input id="del-query-date" name="query_date" maxlength="40" placeholder="e.g. August 2026" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" for="del-details">Anything else we should know</label>
+                        <textarea id="del-details" name="details" maxlength="2000" rows="4" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none"></textarea>
+                    </div>
+
+                    <input name="company_website" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true">
+
+                    <div id="deletion-form-msg" class="hidden text-sm rounded-lg p-3"></div>
+                    <button type="submit" id="deletion-form-btn" class="w-full py-2.5 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-semibold text-sm transition-colors disabled:opacity-50">Send deletion request</button>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+                        If the form cannot reach our server, your email app will open a message to privacy@asian.directory instead.
+                    </p>
+                </form>
+            </section>
+
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Full policy:
+                <a href="privacy.html" class="text-yellow-600 dark:text-yellow-400 hover:underline">Privacy Policy</a>.
+            </p>
+        </article>
+
+        <footer class="mt-12 pt-6 border-t border-gray-200 dark:border-gray-800 text-xs text-gray-400 dark:text-gray-500">
+            <p>© 2026 asian.directory. All rights reserved. <a href="privacy.html" class="hover:text-yellow-500 transition-colors">Privacy Policy</a> · <a href="data-deletion.html" class="hover:text-yellow-500 transition-colors">Data deletion</a></p>
+            <p class="mt-2"><a href="index.html" class="hover:text-yellow-500 transition-colors">Back to asian.directory</a></p>
+        </footer>
+    </div>
+
+    <script>
+        let API_BASE_URL;
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            API_BASE_URL = window.location.origin + '/api';
+        } else if (window.location.hostname.includes('asian.directory')) {
+            API_BASE_URL = 'https://asiandirectory-production-7ec4.up.railway.app/api';
+        } else if (window.location.hostname.includes('.up.railway.app')) {
+            API_BASE_URL = window.location.origin + '/api';
+        } else {
+            API_BASE_URL = window.location.origin + '/api';
+        }
+
+        const form = document.getElementById('deletion-form');
+        const msg = document.getElementById('deletion-form-msg');
+        const btn = document.getElementById('deletion-form-btn');
+
+        const showMsg = (ok, text) => {
+            msg.classList.remove('hidden');
+            msg.className = ok
+                ? 'text-sm rounded-lg p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                : 'text-sm rounded-lg p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300';
+            msg.textContent = text;
+        };
+
+        const collectPayload = () => {
+            const scopes = Array.from(form.querySelectorAll('input[name="scopes"]:checked')).map(el => el.value);
+            return {
+                name: form.name.value.trim(),
+                email: form.email.value.trim(),
+                scopes,
+                listing_name: form.listing_name.value.trim(),
+                listing_city: form.listing_city.value.trim(),
+                listing_country: form.listing_country.value.trim(),
+                query: form.query.value.trim(),
+                query_date: form.query_date.value.trim(),
+                details: form.details.value.trim(),
+                company_website: form.company_website.value
+            };
+        };
+
+        const mailtoFallback = (payload) => {
+            const lines = [
+                'Deletion request from the asian.directory data-deletion page.',
+                '',
+                'Name: ' + payload.name,
+                'Email: ' + payload.email,
+                'What to delete: ' + (payload.scopes.join(', ') || '(see details)'),
+                'Listing name: ' + (payload.listing_name || '-'),
+                'City: ' + (payload.listing_city || '-'),
+                'Country: ' + (payload.listing_country || '-'),
+                'Search query: ' + (payload.query || '-'),
+                'Approximate date: ' + (payload.query_date || '-'),
+                '',
+                payload.details || ''
+            ];
+            const href = 'mailto:privacy@asian.directory?subject=' +
+                encodeURIComponent('Deletion request') +
+                '&body=' + encodeURIComponent(lines.join('\n'));
+            window.location.href = href;
+        };
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = collectPayload();
+            if (payload.scopes.length === 0 && !payload.details) {
+                showMsg(false, 'Choose what to delete, or describe it in the details box.');
+                return;
+            }
+            if (payload.scopes.includes('listing_takedown') && !payload.listing_name) {
+                showMsg(false, 'For a listing takedown, include the listing name.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Sending…';
+            try {
+                const res = await fetch(API_BASE_URL + '/public/data-deletion-requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success) {
+                    showMsg(true, data.message || 'Thank you. We received your request.');
+                    form.reset();
+                } else {
+                    showMsg(false, (data.error || 'Could not reach the server.') + ' Opening email instead.');
+                    mailtoFallback(payload);
+                }
+            } catch (err) {
+                showMsg(false, 'Could not reach the server. Opening email instead.');
+                mailtoFallback(payload);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Send deletion request';
+        });
+    </script>
+</body>
+</html>
