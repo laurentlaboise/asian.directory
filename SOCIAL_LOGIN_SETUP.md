@@ -93,10 +93,19 @@ ADMIN_EMAILS=your.google.address@gmail.com
 origin on that list, and the first entry is the fallback when the request arrives
 without one.
 
-`ADMIN_EMAILS` is a comma-separated list of addresses that are always made admins on
-sign-in. Without it, a social account is created as a `viewer` (read-only) unless it is
-the very first account on the site, which is promoted to admin automatically — the same
-rule password login already used.
+`ADMIN_EMAILS` is a comma-separated list of addresses that are made admins on sign-in,
+and it is worth setting **before** you add the client IDs, because it decides who can
+become an admin:
+
+- **`ADMIN_EMAILS` set** — only those addresses become admins, and only when the
+  provider reports the address as verified. Everyone else who signs in is a read-only
+  `viewer`, whatever order people arrive in.
+- **`ADMIN_EMAILS` empty** — the site falls back to the bootstrap rule password login
+  already used: while no admin exists at all, the first account to sign in is promoted
+  to one. On a public site that means the first stranger to click the button, so treat
+  it as a way in for a site that has none rather than a setting to leave as it is.
+
+Either way, an admin can change anyone's role afterwards from the Users tab.
 
 Railway redeploys on a variable change. Confirm with:
 

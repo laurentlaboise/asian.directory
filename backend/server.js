@@ -603,8 +603,11 @@ const OAUTH_STATE_COOKIE = {
     path: '/'
 };
 
+// Deliberately stricter than the CORS check above: a wildcard is fine for
+// reading the API, but the sign-in return trip carries a token in the URL, so
+// it only ever goes to an origin named explicitly.
 function isAllowedOrigin(origin) {
-    return ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin);
+    return ALLOWED_ORIGINS.includes(origin);
 }
 
 function defaultReturnOrigin() {
@@ -678,9 +681,13 @@ function beginOAuth(res, returnOrigin) {
 // browser kept it. Returns an error message to show, or null when all is well.
 function checkOAuthCallback(req, stateData, providerLabel) {
     if (req.query.error) {
-        return req.query.error === 'access_denied'
-            ? `${providerLabel} sign-in was cancelled.`
-            : (req.query.error_description || `${providerLabel} sign-in was refused.`);
+        if (req.query.error === 'access_denied') {
+            return `${providerLabel} sign-in was cancelled.`;
+        }
+        // The provider's own wording reaches us as a query parameter anyone can
+        // craft, so it goes to the log rather than onto the page.
+        console.error(`${providerLabel} OAuth error:`, req.query.error, req.query.error_description);
+        return `${providerLabel} sign-in was refused. Please try again.`;
     }
     if (!stateData) {
         return `${providerLabel} sign-in expired or could not be verified. Please try again.`;
@@ -711,21 +718,30 @@ async function completeOAuthLogin(provider, profile) {
         });
     }
 
-    // Same bootstrap rule as password login: while the site has no admin, the
-    // first person through the door becomes one — otherwise a social login
-    // lands as a viewer and every dashboard action is denied.
     let role = user.role;
     if (role !== 'admin') {
-        const listed = !!profile.email && ADMIN_EMAILS.includes(profile.email.toLowerCase());
-        let noAdmins = false;
-        if (dbOperations.getAdminCount) {
+        // An address is only trusted to name an admin once the provider says it
+        // verified it — otherwise an account carrying someone else's address as
+        // an unverified alias would be handed the site.
+        const listed = !!profile.email
+            && profile.emailVerified
+            && ADMIN_EMAILS.includes(profile.email.toLowerCase());
+
+        // The bootstrap rule password login uses — while the site has no admin,
+        // the first person through the door becomes one — is a way in for a site
+        // that has none. It applies only while nobody has been named: with
+        // ADMIN_EMAILS set, that list is the only way to become an admin, so a
+        // stranger cannot take the site simply by signing in first.
+        let bootstrap = false;
+        if (!listed && ADMIN_EMAILS.length === 0 && dbOperations.getAdminCount) {
             try {
-                noAdmins = (await dbOperations.getAdminCount()) === 0;
+                bootstrap = (await dbOperations.getAdminCount()) === 0;
             } catch (e) {
                 console.error('Admin check failed:', e.message);
             }
         }
-        if (listed || noAdmins) {
+
+        if (listed || bootstrap) {
             await dbOperations.promoteToAdmin(user.id);
             role = 'admin';
             console.log(`Promoted ${user.username} to admin (${listed ? 'ADMIN_EMAILS' : 'no admins existed'})`);
@@ -817,6 +833,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
         const jwtToken = await completeOAuthLogin('google', {
             id: googleUser.id,
             email: googleUser.email,
+            // v2/userinfo calls it verified_email; the OpenID shape calls it email_verified
+            emailVerified: googleUser.verified_email === true || googleUser.email_verified === true,
             name: googleUser.name,
             picture: googleUser.picture
         });
@@ -892,6 +910,8 @@ app.get('/api/auth/facebook/callback', async (req, res) => {
         const jwtToken = await completeOAuthLogin('facebook', {
             id: fbUser.id,
             email: fbUser.email,
+            // Graph only returns an address Facebook has confirmed for the account
+            emailVerified: !!fbUser.email,
             name: fbUser.name,
             picture: fbUser.picture && fbUser.picture.data ? fbUser.picture.data.url : null
         });
