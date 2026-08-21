@@ -628,6 +628,18 @@ const dbOperations = {
         }
     },
 
+    getUserCount: () => {
+        return db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    },
+
+    getAdminCount: () => {
+        return db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+    },
+
+    promoteToAdmin: (userId) => {
+        db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+    },
+
     createOAuthUser: (provider, oauthId, email, displayName, avatarUrl) => {
         const username = `${provider}_${oauthId}`;
         const stmt = db.prepare(`
@@ -635,6 +647,7 @@ const dbOperations = {
             VALUES (?, ?, ?, ?, ?, ?, 'viewer')
             ON CONFLICT(username) DO UPDATE SET
                 last_login = CURRENT_TIMESTAMP,
+                email = COALESCE(excluded.email, users.email),
                 display_name = excluded.display_name,
                 avatar_url = excluded.avatar_url
         `);

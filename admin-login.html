@@ -51,6 +51,11 @@
             color: #ffffff;
             border: 1px solid #1877F2;
         }
+        .oauth-btn-disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .oauth-btn-facebook:hover {
             background-color: #166fe5;
             border-color: #166fe5;
@@ -214,26 +219,27 @@
         }
 
         // --- SET OAUTH BUTTON HREFS ---
-        document.getElementById('google-oauth-btn').href = `${API_BASE_URL}/auth/google`;
-        document.getElementById('facebook-oauth-btn').href = `${API_BASE_URL}/auth/facebook`;
+        // The API lives on a different origin than this page, so tell it where
+        // to send the browser back to once the provider is done.
+        const OAUTH_RETURN = window.location.origin;
+        document.getElementById('google-oauth-btn').href =
+            `${API_BASE_URL}/auth/google?redirect=${encodeURIComponent(OAUTH_RETURN)}`;
+        document.getElementById('facebook-oauth-btn').href =
+            `${API_BASE_URL}/auth/facebook?redirect=${encodeURIComponent(OAUTH_RETURN)}`;
 
         // --- OAUTH CALLBACK HANDLING ---
         const urlParams = new URLSearchParams(window.location.search);
         const oauthToken = urlParams.get('token');
+        const oauthError = urlParams.get('error');
+
+        // Keep the token out of the address bar and browser history.
+        if (oauthToken || oauthError) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
         if (oauthToken) {
             localStorage.setItem('adminToken', oauthToken);
-            window.location.href = 'admin-dashboard.html';
-        }
-        const oauthError = urlParams.get('error');
-        if (oauthError) {
-            // Defer showAlert until after DOM elements are referenced
-            window.addEventListener('DOMContentLoaded', () => {
-                showAlert(decodeURIComponent(oauthError));
-            });
-            // Also handle case where DOMContentLoaded already fired
-            if (document.readyState !== 'loading') {
-                setTimeout(() => showAlert(decodeURIComponent(oauthError)), 0);
-            }
+            window.location.replace('admin-dashboard.html');
         }
 
         // --- DOM ELEMENTS ---
@@ -313,8 +319,37 @@
 
         // --- HANDLE OAUTH ERROR FROM URL (after showAlert is defined) ---
         if (oauthError) {
-            showAlert(decodeURIComponent(oauthError));
+            showAlert(oauthError);
         }
+
+        // --- DISABLE SOCIAL BUTTONS THE SERVER HAS NO CREDENTIALS FOR ---
+        async function checkAuthProviders() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/providers`, {
+                    signal: AbortSignal.timeout(10000)
+                });
+                if (!response.ok) return;
+
+                const { providers } = await response.json();
+                [['google', 'Google'], ['facebook', 'Facebook']].forEach(([key, label]) => {
+                    if (providers && providers[key]) return;
+                    const btn = document.getElementById(`${key}-oauth-btn`);
+                    if (!btn) return;
+                    btn.removeAttribute('href');
+                    btn.classList.add('oauth-btn-disabled');
+                    btn.title = `${label} sign-in is not configured on this server yet`;
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        showAlert(`${label} sign-in is not set up yet. Please sign in with a username and password.`);
+                    });
+                });
+            } catch (error) {
+                // Leave the buttons alone; the server itself reports the problem.
+                console.error('Could not read auth providers:', error);
+            }
+        }
+
+        checkAuthProviders();
 
         // --- TOGGLE REGISTER FORM ---
         toggleRegisterBtn.addEventListener('click', () => {
