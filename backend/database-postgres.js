@@ -720,6 +720,7 @@ const dbOperations = {
             VALUES ($1, $2, $3, $4, $5, $6, 'viewer')
             ON CONFLICT(username) DO UPDATE SET
                 last_login = NOW(),
+                email = COALESCE(EXCLUDED.email, users.email),
                 display_name = EXCLUDED.display_name,
                 avatar_url = EXCLUDED.avatar_url
         `, [username, email, provider, oauthId, displayName, avatarUrl]);

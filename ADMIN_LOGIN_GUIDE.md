@@ -3,6 +3,10 @@
 ## Overview
 This implementation adds a complete admin authentication system to the asian.directory project, allowing administrators to log in and manage business listings through a web interface.
 
+> **Social login (Google / Facebook):** the code is complete, but each provider needs
+> credentials created in its own console. See **[SOCIAL_LOGIN_SETUP.md](SOCIAL_LOGIN_SETUP.md)**
+> for the step-by-step setup and the Railway variables to set.
+
 ## Features Implemented
 
 ### 1. Admin Login Link

@@ -457,7 +457,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // First user gets admin role automatically
-        const userCount = await dbOperations.getUserCount ? await dbOperations.getUserCount() : null;
+        const userCount = dbOperations.getUserCount ? await dbOperations.getUserCount() : null;
         const role = (userCount === 0) ? 'admin' : 'viewer';
 
         const userId = await dbOperations.createUser(username, hashedPassword, email || null, role, username);
@@ -583,20 +583,183 @@ app.get('/api/auth/verify', authenticateToken, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Social login (Google / Facebook)
+// ---------------------------------------------------------------------------
+
+// The page that finishes the browser half of the dance: the provider sends the
+// browser back here with a token in the query string, and the page stores it
+// and moves on to the dashboard. Redirecting to the site root instead would
+// simply drop the token.
+const OAUTH_RETURN_PATH = '/admin-login.html';
+
+// Accounts that must always come back as admins, comma separated.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+    .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
+const OAUTH_STATE_COOKIE = {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/'
+};
+
+function isAllowedOrigin(origin) {
+    return ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin);
+}
+
+function defaultReturnOrigin() {
+    return ALLOWED_ORIGINS[0] || `http://localhost:${PORT}`;
+}
+
+// The frontend is served from a different origin than this API (GitHub Pages
+// vs Railway), so remember where the login attempt started and send the
+// browser back there rather than guessing.
+function resolveReturnOrigin(req) {
+    for (const candidate of [req.query.redirect, req.get('referer')]) {
+        if (!candidate) continue;
+        try {
+            const { origin } = new URL(candidate);
+            if (isAllowedOrigin(origin)) return origin;
+        } catch (e) { /* ignore malformed values */ }
+    }
+    return defaultReturnOrigin();
+}
+
+function oauthReturnUrl(origin, params) {
+    const url = new URL(OAUTH_RETURN_PATH, origin);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    return url.toString();
+}
+
+function redirectWithError(res, origin, message) {
+    res.redirect(oauthReturnUrl(origin, { error: message }));
+}
+
+// State is signed rather than only kept in a cookie: the browser comes back
+// from the provider on a cross-site navigation and some browsers drop the
+// cookie on the way. The signature carries the return origin and an expiry,
+// and the cookie is still checked whenever it survives.
+function signOAuthState(returnOrigin) {
+    const payload = Buffer.from(JSON.stringify({
+        nonce: crypto.randomBytes(12).toString('hex'),
+        issued: Date.now(),
+        origin: returnOrigin
+    })).toString('base64url');
+    const signature = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('base64url');
+    return `${payload}.${signature}`;
+}
+
+function verifyOAuthState(state) {
+    if (typeof state !== 'string' || !state.includes('.')) return null;
+
+    const [payload, signature] = state.split('.');
+    const expected = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('base64url');
+    const given = Buffer.from(signature || '');
+    const want = Buffer.from(expected);
+    if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return null;
+
+    try {
+        const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        if (Date.now() - data.issued > 10 * 60 * 1000) return null;   // 10 minutes
+        if (!isAllowedOrigin(data.origin)) return null;
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
+function beginOAuth(res, returnOrigin) {
+    const state = signOAuthState(returnOrigin);
+    res.cookie('oauth_state', state, { ...OAUTH_STATE_COOKIE, maxAge: 600000 });
+    return state;
+}
+
+// Validates the state, whether the user cancelled, and the cookie when the
+// browser kept it. Returns an error message to show, or null when all is well.
+function checkOAuthCallback(req, stateData, providerLabel) {
+    if (req.query.error) {
+        return req.query.error === 'access_denied'
+            ? `${providerLabel} sign-in was cancelled.`
+            : (req.query.error_description || `${providerLabel} sign-in was refused.`);
+    }
+    if (!stateData) {
+        return `${providerLabel} sign-in expired or could not be verified. Please try again.`;
+    }
+    const cookieState = req.cookies && req.cookies.oauth_state;
+    if (cookieState && cookieState !== req.query.state) {
+        return `${providerLabel} sign-in state did not match. Please try again.`;
+    }
+    if (!req.query.code) {
+        return `${providerLabel} did not return an authorization code.`;
+    }
+    return null;
+}
+
+// Turns a provider profile into a stored user and a JWT.
+async function completeOAuthLogin(provider, profile) {
+    const user = await dbOperations.createOAuthUser(
+        provider,
+        profile.id,
+        profile.email || null,
+        profile.name || profile.email || `${provider} user`,
+        profile.picture || null
+    );
+
+    if (user.is_active === false || user.is_active === 0) {
+        throw Object.assign(new Error('Inactive account'), {
+            userMessage: 'This account is deactivated. Contact an administrator.'
+        });
+    }
+
+    // Same bootstrap rule as password login: while the site has no admin, the
+    // first person through the door becomes one — otherwise a social login
+    // lands as a viewer and every dashboard action is denied.
+    let role = user.role;
+    if (role !== 'admin') {
+        const listed = !!profile.email && ADMIN_EMAILS.includes(profile.email.toLowerCase());
+        let noAdmins = false;
+        if (dbOperations.getAdminCount) {
+            try {
+                noAdmins = (await dbOperations.getAdminCount()) === 0;
+            } catch (e) {
+                console.error('Admin check failed:', e.message);
+            }
+        }
+        if (listed || noAdmins) {
+            await dbOperations.promoteToAdmin(user.id);
+            role = 'admin';
+            console.log(`Promoted ${user.username} to admin (${listed ? 'ADMIN_EMAILS' : 'no admins existed'})`);
+        }
+    }
+
+    await dbOperations.updateUserLogin(user.id);
+    return signToken({ ...user, role });
+}
+
+// Which sign-in methods this deployment actually has credentials for, so the
+// login page can grey out the buttons that would dead-end.
+app.get('/api/auth/providers', (req, res) => {
+    res.json({
+        success: true,
+        providers: {
+            password: true,
+            google: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+            facebook: !!(FACEBOOK_APP_ID && FACEBOOK_APP_SECRET)
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Google OAuth
 // ---------------------------------------------------------------------------
 app.get('/api/auth/google', (req, res) => {
-    if (!GOOGLE_CLIENT_ID) {
-        return res.status(501).json({ success: false, error: 'Google OAuth not configured' });
+    const returnOrigin = resolveReturnOrigin(req);
+
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+        return redirectWithError(res, returnOrigin, 'Google sign-in is not configured on this server yet.');
     }
 
-    const state = crypto.randomBytes(16).toString('hex');
-    res.cookie('oauth_state', state, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 600000  // 10 minutes
-    });
+    const state = beginOAuth(res, returnOrigin);
 
     const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,
@@ -604,30 +767,26 @@ app.get('/api/auth/google', (req, res) => {
         response_type: 'code',
         scope: 'openid email profile',
         state,
-        access_type: 'offline',
-        prompt: 'consent'
+        prompt: 'select_account'
     });
 
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
 app.get('/api/auth/google/callback', async (req, res) => {
+    const stateData = verifyOAuthState(req.query.state);
+    const returnOrigin = (stateData && stateData.origin) || defaultReturnOrigin();
+    res.clearCookie('oauth_state', OAUTH_STATE_COOKIE);
+
     try {
-        const { code, state } = req.query;
-        const savedState = req.cookies && req.cookies.oauth_state;
-
-        if (!code) {
-            return res.status(400).json({ success: false, error: 'Authorization code missing' });
+        const problem = checkOAuthCallback(req, stateData, 'Google');
+        if (problem) {
+            return redirectWithError(res, returnOrigin, problem);
         }
-
-        if (!state || state !== savedState) {
-            return res.status(403).json({ success: false, error: 'Invalid OAuth state' });
-        }
-        res.clearCookie('oauth_state');
 
         // Exchange code for tokens
         const tokenBody = new URLSearchParams({
-            code,
+            code: req.query.code,
             client_id: GOOGLE_CLIENT_ID,
             client_secret: GOOGLE_CLIENT_SECRET,
             redirect_uri: GOOGLE_CALLBACK_URL,
@@ -642,7 +801,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
         if (tokenResponse.statusCode !== 200 || !tokenResponse.data.access_token) {
             console.error('Google token exchange failed:', tokenResponse.data);
-            return res.status(401).json({ success: false, error: 'Google authentication failed' });
+            return redirectWithError(res, returnOrigin, 'Google rejected the sign-in. Check that the redirect URI matches the one registered in Google Cloud.');
         }
 
         // Fetch user info
@@ -651,29 +810,21 @@ app.get('/api/auth/google/callback', async (req, res) => {
         );
 
         if (userInfoResponse.statusCode !== 200) {
-            return res.status(401).json({ success: false, error: 'Failed to fetch Google user info' });
+            return redirectWithError(res, returnOrigin, 'Could not read your Google profile. Please try again.');
         }
 
         const googleUser = userInfoResponse.data;
+        const jwtToken = await completeOAuthLogin('google', {
+            id: googleUser.id,
+            email: googleUser.email,
+            name: googleUser.name,
+            picture: googleUser.picture
+        });
 
-        // Create or update user in our database
-        const user = await dbOperations.createOAuthUser(
-            'google',
-            googleUser.id,
-            googleUser.email,
-            googleUser.name || googleUser.email,
-            googleUser.picture
-        );
-
-        await dbOperations.updateUserLogin(user.id);
-        const jwtToken = signToken(user);
-
-        // Redirect back to the frontend with the token
-        const frontendUrl = ALLOWED_ORIGINS[0] || 'http://localhost:3000';
-        res.redirect(`${frontendUrl}?token=${jwtToken}&auth=google`);
+        res.redirect(oauthReturnUrl(returnOrigin, { token: jwtToken, auth: 'google' }));
     } catch (error) {
         console.error('Google OAuth callback error:', error);
-        res.status(500).json({ success: false, error: 'Google OAuth failed' });
+        redirectWithError(res, returnOrigin, error.userMessage || 'Google sign-in failed. Please try again or use a username and password.');
     }
 });
 
@@ -681,17 +832,13 @@ app.get('/api/auth/google/callback', async (req, res) => {
 // Facebook OAuth
 // ---------------------------------------------------------------------------
 app.get('/api/auth/facebook', (req, res) => {
-    if (!FACEBOOK_APP_ID) {
-        return res.status(501).json({ success: false, error: 'Facebook OAuth not configured' });
+    const returnOrigin = resolveReturnOrigin(req);
+
+    if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
+        return redirectWithError(res, returnOrigin, 'Facebook sign-in is not configured on this server yet.');
     }
 
-    const state = crypto.randomBytes(16).toString('hex');
-    res.cookie('oauth_state', state, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 600000
-    });
+    const state = beginOAuth(res, returnOrigin);
 
     const params = new URLSearchParams({
         client_id: FACEBOOK_APP_ID,
@@ -705,25 +852,22 @@ app.get('/api/auth/facebook', (req, res) => {
 });
 
 app.get('/api/auth/facebook/callback', async (req, res) => {
+    const stateData = verifyOAuthState(req.query.state);
+    const returnOrigin = (stateData && stateData.origin) || defaultReturnOrigin();
+    res.clearCookie('oauth_state', OAUTH_STATE_COOKIE);
+
     try {
-        const { code, state } = req.query;
-        const savedState = req.cookies && req.cookies.oauth_state;
-
-        if (!code) {
-            return res.status(400).json({ success: false, error: 'Authorization code missing' });
+        const problem = checkOAuthCallback(req, stateData, 'Facebook');
+        if (problem) {
+            return redirectWithError(res, returnOrigin, problem);
         }
-
-        if (!state || state !== savedState) {
-            return res.status(403).json({ success: false, error: 'Invalid OAuth state' });
-        }
-        res.clearCookie('oauth_state');
 
         // Exchange code for access token
         const tokenParams = new URLSearchParams({
             client_id: FACEBOOK_APP_ID,
             client_secret: FACEBOOK_APP_SECRET,
             redirect_uri: FACEBOOK_CALLBACK_URL,
-            code
+            code: req.query.code
         });
 
         const tokenResponse = await httpRequest(
@@ -732,7 +876,7 @@ app.get('/api/auth/facebook/callback', async (req, res) => {
 
         if (tokenResponse.statusCode !== 200 || !tokenResponse.data.access_token) {
             console.error('Facebook token exchange failed:', tokenResponse.data);
-            return res.status(401).json({ success: false, error: 'Facebook authentication failed' });
+            return redirectWithError(res, returnOrigin, 'Facebook rejected the sign-in. Check that the redirect URI matches the one registered in the Meta app.');
         }
 
         // Fetch user info
@@ -741,27 +885,21 @@ app.get('/api/auth/facebook/callback', async (req, res) => {
         );
 
         if (userInfoResponse.statusCode !== 200) {
-            return res.status(401).json({ success: false, error: 'Failed to fetch Facebook user info' });
+            return redirectWithError(res, returnOrigin, 'Could not read your Facebook profile. Please try again.');
         }
 
         const fbUser = userInfoResponse.data;
+        const jwtToken = await completeOAuthLogin('facebook', {
+            id: fbUser.id,
+            email: fbUser.email,
+            name: fbUser.name,
+            picture: fbUser.picture && fbUser.picture.data ? fbUser.picture.data.url : null
+        });
 
-        const user = await dbOperations.createOAuthUser(
-            'facebook',
-            fbUser.id,
-            fbUser.email || null,
-            fbUser.name,
-            fbUser.picture && fbUser.picture.data ? fbUser.picture.data.url : null
-        );
-
-        await dbOperations.updateUserLogin(user.id);
-        const jwtToken = signToken(user);
-
-        const frontendUrl = ALLOWED_ORIGINS[0] || 'http://localhost:3000';
-        res.redirect(`${frontendUrl}?token=${jwtToken}&auth=facebook`);
+        res.redirect(oauthReturnUrl(returnOrigin, { token: jwtToken, auth: 'facebook' }));
     } catch (error) {
         console.error('Facebook OAuth callback error:', error);
-        res.status(500).json({ success: false, error: 'Facebook OAuth failed' });
+        redirectWithError(res, returnOrigin, error.userMessage || 'Facebook sign-in failed. Please try again or use a username and password.');
     }
 });
 
