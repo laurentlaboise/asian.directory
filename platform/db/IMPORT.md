@@ -15,7 +15,7 @@ The whole file is validated before anything is written; on a schema error it pri
 issues and exits non-zero. Per-record failures (e.g. a slug hash collision) are reported and counted
 but don't abort the run. Output: `inserted=… updated=… failed=…`.
 
-Operator: live import of `data/laos-qualified-2026-08-22.json` is blocked until `DATABASE_URL` and `EMBEDDINGS_URL` are set (`npm run db:import -- data/laos-qualified-2026-08-22.json` from `platform/`).
+Operator: `data/laos-qualified-2026-08-22.json` is not on the branch yet (copy from `/workspace/lncci-clean/asian-directory-import-qualified.json` on the operator box). Live import is also blocked until `DATABASE_URL` and `EMBEDDINGS_URL` are set (`npm run db:import -- data/laos-qualified-2026-08-22.json` from `platform/`).
 
 ## Record format
 
