@@ -159,7 +159,9 @@ const QUERY_ALIASES = {
     lawyers: ['lawyers', 'lawyer', 'legal'],
     lawyer: ['lawyer', 'legal'],
     banks: ['banks', 'bank', 'banking'],
-    schools: ['schools', 'school']
+    schools: ['schools', 'school'],
+    wifi: ['wifi', 'wi-fi'],
+    'wi-fi': ['wi-fi', 'wifi']
 };
 
 // More specific rules first. Live catalog strings from GET /categories 2026-08-23.

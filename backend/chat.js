@@ -35,6 +35,7 @@ const {
     decodeListingFields
 } = require('./search-query');
 const { pickClarifyChips, mapListing } = require('./categories');
+const { STRICT_COPY_TOKENS, copyTokensInText } = require('./copy-tokens');
 
 const CHAT_LISTING_LIMIT = 8;
 const CHAT_HISTORY_LIMIT = 8;
@@ -202,6 +203,10 @@ function isAmenityFollowUp(query) {
     const text = String(query || '');
     if (/\bgood\s+for\b/i.test(text)) return true;
     return tokenize(text).some((token) => AMENITY_QUALITY_CUES.has(token));
+}
+
+function requestedStrictCopyTokens(query) {
+    return copyTokensInText(query).filter((token) => STRICT_COPY_TOKENS.has(token));
 }
 
 function isGreetingTurn(query) {
@@ -461,7 +466,9 @@ async function handleChatRequest({
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
     const amenityFollowUp = isAmenityFollowUp(latest);
-    const searchReply = amenityFollowUp
+    const strictAsked = requestedStrictCopyTokens(latest);
+    const copyTokenHit = strictAsked.length > 0 && listings.length > 0;
+    const searchReply = amenityFollowUp && !copyTokenHit
         ? MISSING_AMENITY_REPLY
         : (!listings.length && mentionsOutsideCoverage(query || latest)
             ? OUTSIDE_COVERAGE_REPLY
@@ -527,6 +534,7 @@ module.exports = {
     latestUserText,
     searchQueryFromMessages,
     isAmenityFollowUp,
+    requestedStrictCopyTokens,
     isGreetingTurn,
     detectClarifyKind,
     shouldClarify,
