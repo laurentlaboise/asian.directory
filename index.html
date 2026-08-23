@@ -452,13 +452,15 @@
                 .catch(error => {
                     console.error('Error fetching from API:', error);
                     // Fallback to local search if API is unavailable
-                    const searchTerms = prompt.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+                    const stopwords = new Set(['a','an','and','are','as','at','be','by','for','from','in','into','is','it','near','of','on','or','the','to','with']);
+                    const countryGenerics = new Set(['laos','lao','pdr']);
+                    const searchTerms = prompt.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(term => term.length > 2 && !stopwords.has(term) && !countryGenerics.has(term));
                     if (searchTerms.length === 0) {
                         addAIResponse([]);
                     } else {
                         const results = businesses.filter(business => {
-                            const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${business.keywords.join(' ')}`.toLowerCase();
-                            return searchTerms.some(term => businessInfo.includes(term));
+                            const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${(business.city || '')} ${business.keywords.join(' ')}`.toLowerCase();
+                            return searchTerms.every(term => businessInfo.includes(term));
                         });
                         addAIResponse(results);
                     }

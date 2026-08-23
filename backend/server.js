@@ -990,7 +990,7 @@ app.get('/api/businesses/export', authenticateToken, async (req, res) => {
     }
 });
 
-// Search businesses
+// Public search — always active listings. status= query param is ignored.
 app.get('/api/businesses/search', async (req, res) => {
     try {
         const query = req.query.q || '';

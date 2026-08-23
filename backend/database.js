@@ -15,6 +15,7 @@ try {
 
 const path = require('path');
 const crypto = require('crypto');
+const { parseSearchQuery, buildContentSearchSql, rankBusinesses } = require('./search-query');
 
 // Initialize database
 const db = new Database(path.join(__dirname, 'asian-directory.db'));
@@ -415,27 +416,15 @@ const dbOperations = {
         return businesses.map(parseBusiness);
     },
 
+    // Public search is always active-only. See search-query.js for AND + ranking.
     searchBusinesses: (query) => {
-        const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-
-        if (searchTerms.length === 0) {
-            return [];
-        }
-
-        const likeConditions = searchTerms.map(() =>
-            '(LOWER(name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(description) LIKE ? OR LOWER(address) LIKE ? OR LOWER(keywords) LIKE ? OR LOWER(country) LIKE ? OR LOWER(city) LIKE ?)'
-        ).join(' OR ');
-
-        const sql = `SELECT * FROM businesses WHERE status = 'active' AND (${likeConditions}) ORDER BY is_featured DESC, created_at DESC`;
-
-        const params = searchTerms.flatMap(term => {
-            const likeTerm = `%${term}%`;
-            return [likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm];
-        });
+        const parsed = parseSearchQuery(query);
+        const { sql, params } = buildContentSearchSql(parsed, 'sqlite');
+        if (!sql) return [];
 
         const stmt = db.prepare(sql);
         const businesses = stmt.all(...params);
-        return businesses.map(parseBusiness);
+        return rankBusinesses(businesses.map(parseBusiness), parsed);
     },
 
     getBusinessById: (id) => {

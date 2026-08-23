@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
+const { parseSearchQuery, buildContentSearchSql, rankBusinesses } = require('./search-query');
 
 // ---------------------------------------------------------------------------
 // PostgreSQL connection pool
@@ -503,28 +504,14 @@ const dbOperations = {
         return result.rows.map(parseBusiness);
     },
 
+    // Public search is always active-only. See search-query.js for AND + ranking.
     searchBusinesses: async (query) => {
-        const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-        if (terms.length === 0) return [];
-
-        const conditions = terms.map((_, i) => {
-            const p = i + 1;
-            return `(
-                LOWER(name) LIKE $${p}
-                OR LOWER(category) LIKE $${p}
-                OR LOWER(description) LIKE $${p}
-                OR LOWER(address) LIKE $${p}
-                OR LOWER(keywords::text) LIKE $${p}
-                OR LOWER(COALESCE(country,'')) LIKE $${p}
-                OR LOWER(COALESCE(city,'')) LIKE $${p}
-            )`;
-        }).join(' OR ');
-
-        const sql = `SELECT * FROM businesses WHERE status = 'active' AND (${conditions}) ORDER BY is_featured DESC, created_at DESC`;
-        const params = terms.map(t => `%${t}%`);
+        const parsed = parseSearchQuery(query);
+        const { sql, params } = buildContentSearchSql(parsed, 'pg');
+        if (!sql) return [];
 
         const result = await pool.query(sql, params);
-        return result.rows.map(parseBusiness);
+        return rankBusinesses(result.rows.map(parseBusiness), parsed);
     },
 
     getBusinessById: async (id) => {
