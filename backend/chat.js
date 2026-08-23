@@ -32,7 +32,9 @@ const {
     isGreeting,
     isFollowUp,
     mentionsOutsideCoverage,
-    decodeListingFields
+    decodeListingFields,
+    namedCategoryConstraint,
+    LOCATION_HINTS
 } = require('./search-query');
 const { pickClarifyChips, mapListing } = require('./categories');
 const { STRICT_COPY_TOKENS, copyTokensInText } = require('./copy-tokens');
@@ -49,8 +51,10 @@ const ALLOWED_ROLES = new Set(['user', 'assistant']);
 const SYSTEM_PROMPT_TEXT = 'You are asian.directory\'s conversational assistant for a SEA business directory (strongest in Laos: Vientiane, Luang Prabang; expanding Thailand, Vietnam, Cambodia). Warm, lightly local, polite, never pushy. Reply in 1–3 short sentences. No emojis unless the user used one. No hype (amazing, must-try, best in the world). Help people find real catalog businesses. Never invent listings, amenities, reviews, prices, hours, wifi, contact, or features. Use ONLY the listing JSON below (name, city, category, website). Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. If vague (e.g. "I\'m hungry", "what should I eat?") ask 1–2 clarifying questions (cuisine and city). Do not invent places. Hello: short welcome, ask eat/drink/stay/other + city. After search: one natural sentence reflecting intent; cards stay the star. Missing amenity: say "I don’t have that information for these places yet." Do not infer quieter or laptop-friendly from descriptions. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank. Stay on directory purpose; politely decline unrelated asks. If they ask Tokyo/Seoul etc., say strongest coverage is SEA/Laos.';
 
 const AMENITY_QUALITY_CUES = new Set([
-    'wifi', 'hours', 'reviews', 'review', 'working', 'work', 'laptop', 'laptops'
+    'wifi', 'hours', 'reviews', 'review', 'working', 'work', 'laptop', 'laptops',
+    'family', 'families', 'kids', 'children'
 ]);
+const PRICE_QUALITY_CUES = new Set(['cheaper', 'cheap', 'price', 'prices']);
 
 const VAGUE_FOOD_TOKENS = new Set(['hungry', 'eat', 'food']);
 const VAGUE_NEED_TOKENS = new Set(['hungry', 'eat', 'food', 'bored', 'help']);
@@ -59,12 +63,15 @@ const GREETING_REPLY = 'Welcome. Looking to eat, drink, stay, or something else 
 const FOOD_CLARIFY_REPLY = 'What kind of food, and in which city?';
 const NEED_CLARIFY_REPLY = 'What are you looking for, and in which city?';
 const MISSING_AMENITY_REPLY = 'I don’t have that information for these places yet.';
+const MISSING_PRICE_REPLY = 'I don’t have prices for these places yet.';
+const CITY_CLARIFY_REPLY = 'Which city?';
 const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Laos — Vientiane and Luang Prabang especially.';
 
 const CLARIFY_CHIPS = {
     greeting: ['Eat?', 'Coffee?', 'Vientiane?'],
     food: ['Coffee?', 'Restaurants?', 'Vientiane?'],
-    need: ['Coffee?', 'Hotels?', 'Lawyers?']
+    need: ['Coffee?', 'Hotels?', 'Lawyers?'],
+    city: ['Which city?']
 };
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -201,8 +208,37 @@ function listingForModel(row) {
 
 function isAmenityFollowUp(query) {
     const text = String(query || '');
+    if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
     if (/\bgood\s+for\b/i.test(text)) return true;
     return tokenize(text).some((token) => AMENITY_QUALITY_CUES.has(token));
+}
+
+function isPriceFollowUp(query) {
+    const text = String(query || '');
+    if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
+    return tokenize(text).some((token) => PRICE_QUALITY_CUES.has(token));
+}
+
+function lastSpecifiedQuery(historyTurns) {
+    for (let i = (historyTurns || []).length - 1; i >= 0; i--) {
+        const turn = historyTurns[i];
+        const parsed = parseSearchQuery(turn);
+        if (!parsed.isEmpty) return String(turn || '').trim();
+    }
+    return '';
+}
+
+function needsCityClarify(query) {
+    const tokens = tokenize(query);
+    if (tokens.some((token) => LOCATION_HINTS.has(token))) return false;
+    const parsed = parseSearchQuery(query);
+    if (namedCategoryConstraint(parsed.contentTerms)) return false;
+    if (parsed.contentTerms.some((term) => !AMENITY_QUALITY_CUES.has(term) && !PRICE_QUALITY_CUES.has(term))) {
+        return false;
+    }
+    if (/\bnear\s+me\b/i.test(String(query || ''))) return true;
+    if (isFollowUp(query) && parsed.isEmpty) return true;
+    return false;
 }
 
 function requestedStrictCopyTokens(query) {
@@ -241,18 +277,24 @@ function detectClarifyKind(query) {
         if (tokens.some((token) => VAGUE_NEED_TOKENS.has(token))) return 'need';
     }
 
+    if (needsCityClarify(query)) return 'city';
     return null;
 }
 
 function shouldClarify(latest, historyTurns) {
-    if (isAmenityFollowUp(latest)) return null;
+    if ((historyTurns || []).length && (isAmenityFollowUp(latest) || isPriceFollowUp(latest))) {
+        return null;
+    }
     if ((historyTurns || []).length && isFollowUp(latest)) return null;
+    if (needsCityClarify(latest)) return 'city';
+    if (isAmenityFollowUp(latest)) return null;
     return detectClarifyKind(latest);
 }
 
 function clarifyReply(kind) {
     if (kind === 'greeting') return GREETING_REPLY;
     if (kind === 'food') return FOOD_CLARIFY_REPLY;
+    if (kind === 'city') return CITY_CLARIFY_REPLY;
     return NEED_CLARIFY_REPLY;
 }
 
@@ -261,6 +303,7 @@ function clarifyChips(kind) {
 }
 
 async function clarifyChipsForRequest(kind, searchBusinesses) {
+    if (kind === 'city') return clarifyChips('city');
     const chips = await pickClarifyChips(kind, { searchBusinesses });
     return chips.length ? chips : clarifyChips(kind);
 }
@@ -449,8 +492,15 @@ async function handleChatRequest({
         };
     }
 
-    const query = searchQueryFromMessages(normalized.messages);
-    const parsed = parseSearchQuery(query);
+    const amenityFollowUp = isAmenityFollowUp(latest);
+    const priceFollowUp = isPriceFollowUp(latest);
+    const keepPriorListings = (amenityFollowUp || priceFollowUp) && historyTurns.length > 0;
+    let query = searchQueryFromMessages(normalized.messages);
+    if (keepPriorListings) {
+        const prior = lastSpecifiedQuery(historyTurns);
+        if (prior) query = prior;
+    }
+    let parsed = parseSearchQuery(query);
     let all = [];
     try {
         all = await Promise.resolve(searchBusinesses(query));
@@ -460,19 +510,34 @@ async function handleChatRequest({
         all = [];
     }
 
+    if (keepPriorListings && !all.length) {
+        const prior = lastSpecifiedQuery(historyTurns);
+        if (prior && prior !== query) {
+            try {
+                const fallback = await Promise.resolve(searchBusinesses(prior));
+                if (Array.isArray(fallback) && fallback.length) {
+                    query = prior;
+                    parsed = parseSearchQuery(prior);
+                    all = fallback;
+                }
+            } catch {
+                // Keep the empty first result.
+            }
+        }
+    }
+
     const truncated = all.length > CHAT_LISTING_LIMIT;
     const listings = all.slice(0, CHAT_LISTING_LIMIT).map(publicListing).filter(Boolean);
     const modelListings = listings.map(listingForModel).filter(Boolean);
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
-    const amenityFollowUp = isAmenityFollowUp(latest);
-    const strictAsked = requestedStrictCopyTokens(latest);
-    const copyTokenHit = strictAsked.length > 0 && listings.length > 0;
-    const searchReply = amenityFollowUp && !copyTokenHit
-        ? MISSING_AMENITY_REPLY
-        : (!listings.length && mentionsOutsideCoverage(query || latest)
-            ? OUTSIDE_COVERAGE_REPLY
-            : template.reply);
+    const searchReply = priceFollowUp
+        ? MISSING_PRICE_REPLY
+        : (amenityFollowUp
+            ? MISSING_AMENITY_REPLY
+            : (!listings.length && mentionsOutsideCoverage(query || latest)
+                ? OUTSIDE_COVERAGE_REPLY
+                : template.reply));
 
     const respond = (mode, reply) => {
         const spoken = sanitizeSpokenReply(reply, modelListings);
@@ -491,7 +556,7 @@ async function handleChatRequest({
     };
 
     const apiKey = getChatApiKey(env);
-    if (!apiKey || amenityFollowUp || !modelListings.length) {
+    if (!apiKey || amenityFollowUp || priceFollowUp || !modelListings.length) {
         return respond('search', searchReply);
     }
 
@@ -519,6 +584,7 @@ module.exports = {
     DEFAULT_XAI_MODEL,
     SYSTEM_PROMPT_TEXT,
     AMENITY_QUALITY_CUES,
+    PRICE_QUALITY_CUES,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
@@ -534,6 +600,9 @@ module.exports = {
     latestUserText,
     searchQueryFromMessages,
     isAmenityFollowUp,
+    isPriceFollowUp,
+    lastSpecifiedQuery,
+    needsCityClarify,
     requestedStrictCopyTokens,
     isGreetingTurn,
     detectClarifyKind,
@@ -545,6 +614,8 @@ module.exports = {
     FOOD_CLARIFY_REPLY,
     NEED_CLARIFY_REPLY,
     MISSING_AMENITY_REPLY,
+    MISSING_PRICE_REPLY,
+    CITY_CLARIFY_REPLY,
     OUTSIDE_COVERAGE_REPLY,
     VAGUE_NEED_TOKENS,
     buildSystemPrompt,
