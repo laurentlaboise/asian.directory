@@ -566,9 +566,14 @@ function rowMatchesCuisinePlace(business, parsed) {
 
 function rowMatchesCopyTokens(business, parsed) {
     const terms = (parsed && parsed.contentTerms) || [];
-    const required = terms.filter((term) => STRICT_COPY_TOKENS.has(term));
+    const required = terms.filter((term) => SEARCHABLE_COPY_TOKENS.has(term));
     if (!required.length) return true;
-    return required.every((term) => rowHasCopyToken(business, term));
+    const text = listingMatchText(business);
+    return required.every((term) => {
+        if (rowHasCopyToken(business, term)) return true;
+        if (STRICT_COPY_TOKENS.has(term)) return false;
+        return termAliases(term).some((alias) => text.includes(alias));
+    });
 }
 
 function decodeListingFields(business) {
