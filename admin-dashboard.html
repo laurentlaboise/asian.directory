@@ -512,15 +512,15 @@
                         <label class="form-label" for="form-pipeline">Pipeline Stage <span class="required">*</span>
                             <span class="form-tooltip">
                                 <svg class="w-3.5 h-3.5 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                <span class="tooltip-text">Tracks progress from initial lead to active listing</span>
+                                <span class="tooltip-text">Tracks progress from Basic through Blurb</span>
                             </span>
                         </label>
                         <select id="form-pipeline" class="form-input">
-                            <option value="new_lead">New Lead</option>
-                            <option value="contacted">Contacted</option>
-                            <option value="in_review">In Review</option>
-                            <option value="verified">Verified</option>
-                            <option value="active_listing">Active Listing</option>
+                            <option value="new_lead">Basic</option>
+                            <option value="contacted">Phone checked</option>
+                            <option value="in_review">Has a site</option>
+                            <option value="verified">Social/Maps</option>
+                            <option value="active_listing">Blurb</option>
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
@@ -814,7 +814,7 @@ function formatDate(d) {
 }
 
 function stageLabel(s) {
-    const labels = { new_lead: 'New Lead', contacted: 'Contacted', in_review: 'In Review', verified: 'Verified', active_listing: 'Active', inactive: 'Inactive' };
+    const labels = { new_lead: 'Basic', contacted: 'Phone checked', in_review: 'Has a site', verified: 'Social/Maps', active_listing: 'Blurb', inactive: 'Inactive' };
     return labels[s] || s;
 }
 
@@ -1039,16 +1039,13 @@ function activityIcon(type) {
 let pipelineView = 'kanban'; // kanban or list
 
 async function renderPipeline(el) {
-    const [pipeRes, stagnantRes, forecastRes] = await Promise.all([
+    const [pipeRes, stagnantRes] = await Promise.all([
         api('/crm/pipeline'),
-        api('/crm/stagnant?days=7').catch(() => ({ success: true, data: [] })),
-        api('/crm/forecast').catch(() => ({ success: true, data: { pipeline: [], velocity: { this_week: 0, last_week: 0 } } }))
+        api('/crm/stagnant?days=7').catch(() => ({ success: true, data: [] }))
     ]);
     if (!pipeRes?.success) { el.innerHTML = '<p class="text-red-500">Failed to load pipeline</p>'; return; }
 
     const stagnantIds = new Set((stagnantRes?.data || []).map(d => d.id));
-    const forecast = forecastRes?.data || { pipeline: [], velocity: { this_week: 0, last_week: 0 } };
-    const velocityTrend = forecast.velocity.this_week >= forecast.velocity.last_week ? 'up' : 'down';
 
     const stages = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive'];
     const colors = { new_lead: 'border-blue-400', contacted: 'border-yellow-400', in_review: 'border-orange-400', verified: 'border-green-400', active_listing: 'border-emerald-400', inactive: 'border-gray-400' };
@@ -1056,27 +1053,6 @@ async function renderPipeline(el) {
     const totalInPipeline = stages.reduce((sum, s) => sum + (pipeRes.data[s] || []).length, 0);
 
     el.innerHTML = `
-        <!-- Forecast Bar -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">In Pipeline</div>
-                <div class="text-2xl font-bold mt-1">${totalInPipeline}</div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">Stagnant Deals</div>
-                <div class="text-2xl font-bold mt-1 ${stagnantIds.size > 0 ? 'text-red-500' : 'text-green-500'}">${stagnantIds.size}</div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">Activity This Week</div>
-                <div class="text-2xl font-bold mt-1 flex items-center gap-1">${forecast.velocity.this_week}
-                    <span class="text-xs ${velocityTrend === 'up' ? 'text-green-500' : 'text-red-500'}">${velocityTrend === 'up' ? '&#9650;' : '&#9660;'}</span>
-                </div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">Weighted Forecast</div>
-                <div class="text-2xl font-bold mt-1">${forecast.pipeline.reduce((s, p) => s + (p.count * (p.avg_score || 50) / 100), 0).toFixed(0)}</div>
-            </div>
-        </div>
         <!-- Stage Progress Bar -->
         <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 mb-4">
             <div class="flex rounded-full overflow-hidden h-3">
