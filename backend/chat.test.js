@@ -12,6 +12,7 @@ const {
     sanitizeErrorMessage,
     publicListing,
     listingForModel,
+    stripSpokenContact,
     normalizeMessages,
     searchQueryFromMessages,
     buildSystemPrompt,
@@ -92,6 +93,26 @@ test('listingForModel is a slim 200-char snippet without phone or address', () =
     assert.equal(slim.keywords, undefined);
     assert.equal(slim.id, undefined);
     assert.equal(slim.wifi, undefined);
+
+    const withContact = listingForModel({
+        ...YUNI_COFFEE,
+        email: 'sales@yunicoffeeco.com',
+        phone: '+856 20 5551234',
+        description: 'Contact email: sales@yunicoffeeco.com or call +856 20 5551234.'
+    });
+    assert.equal(withContact.phone, undefined);
+    assert.equal(withContact.email, undefined);
+    assert.doesNotMatch(withContact.description || '', /@/);
+    assert.doesNotMatch(withContact.description || '', /\+856/);
+    assert.doesNotMatch(JSON.stringify(withContact), /sales@yunicoffeeco\.com|\+856 20 5551234/);
+});
+
+test('spoken reply never includes phone or email', () => {
+    assert.equal(
+        stripSpokenContact('Call +856 20 5551234 or email sales@yunicoffeeco.com today.'),
+        'Call or email today.'
+    );
+    assert.doesNotMatch(stripSpokenContact('Ping me at hello@asian.directory'), /@/);
 });
 
 test('normalizeMessages keeps last 8 user/assistant turns and drops system', () => {
@@ -190,13 +211,15 @@ test('with a key, Grok reply is used and the key is never returned', async () =>
             assert.ok(listings.every((row) => row.address === undefined));
             assert.ok(listings.every((row) => row.business_hours === undefined));
             assert.ok(listings.every((row) => !('keywords' in row)));
-            return 'I do not have wifi or workspace notes on these rows. Vanmai Coffee Cooperative, Vientiane. Yuni Coffee Company, Ltd., Vientiane.';
+            return 'Call +856 20 5551234 or sales@yunicoffeeco.com. I do not have wifi or workspace notes on these rows. Vanmai Coffee Cooperative, Vientiane.';
         }
     });
 
     assert.equal(result.status, 200);
     assert.equal(result.body.mode, 'llm');
     assert.match(result.body.reply, /I do not have wifi/);
+    assert.doesNotMatch(result.body.reply, /@|\+856|5551234/);
+    assert.ok(!JSON.stringify(result.body.reply).includes('sales@yunicoffeeco.com'));
     assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
     assert.equal(result.body.listings.length, 2);
     assert.equal(result.body.listings[1].phone, '+856 20 0000');
@@ -252,10 +275,12 @@ test('system prompt is the locked short text plus LISTINGS JSON', () => {
     const prompt = buildSystemPrompt({ listings: slim });
     assert.equal(
         SYSTEM_PROMPT_TEXT,
-        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise.'
+        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices.'
     );
     assert.equal(prompt, `${SYSTEM_PROMPT_TEXT}\n${JSON.stringify(slim)}`);
-    assert.doesNotMatch(prompt, /phone|address|business_hours|special_offerings|keywords/);
+    assert.match(SYSTEM_PROMPT_TEXT, /Do not read out phone numbers or email addresses/);
+    assert.match(SYSTEM_PROMPT_TEXT, /Do not mention prices/);
+    assert.doesNotMatch(JSON.stringify(slim), /"phone"|"email"|business_hours|special_offerings|keywords/);
     assert.doesNotMatch(JSON.stringify(slim), /wifi":/);
     assert.equal(DEFAULT_XAI_MODEL, 'grok-4.3');
     assert.equal(getChatModel({}), 'grok-4.3');

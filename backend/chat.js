@@ -30,7 +30,10 @@ const DEFAULT_XAI_MODEL = 'grok-4.3';
 
 const ALLOWED_ROLES = new Set(['user', 'assistant']);
 const MODEL_DESC_MAX = 200;
-const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise.';
+const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices.';
+
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PHONE_RE = /(?:\+?\d[\d\s().-]{6,}\d)/g;
 
 const CARD_LISTING_FIELDS = [
     'id',
@@ -96,15 +99,34 @@ function publicListing(row) {
 }
 
 /**
+ * Spoken reply and model JSON must never include phone or email.
+ */
+function stripSpokenContact(text) {
+    const cleaned = String(text || '')
+        .replace(EMAIL_RE, '')
+        .replace(PHONE_RE, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/[ \t]+([,.;:!?])/g, '$1')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    return cleaned;
+}
+
+/**
  * Slim row for the model only. Description is a 200-char snippet.
- * No phone, address, hours, offerings, or keywords.
+ * No phone, address, hours, offerings, keywords, or contact strings.
  */
 function listingForModel(row) {
     const out = copyPresentFields(row, MODEL_LISTING_FIELDS);
     if (!out) return null;
+    delete out.phone;
+    delete out.email;
+    delete out.alt_phone;
     if (presentValue(row.description)) {
-        const text = String(row.description).trim();
-        out.description = text.length > MODEL_DESC_MAX ? text.slice(0, MODEL_DESC_MAX) : text;
+        const text = stripSpokenContact(String(row.description).trim());
+        if (text) {
+            out.description = text.length > MODEL_DESC_MAX ? text.slice(0, MODEL_DESC_MAX) : text;
+        }
     }
     return out;
 }
@@ -299,7 +321,7 @@ async function handleChatRequest({
             apiKey,
             model: getChatModel(env)
         });
-        const text = String(reply || '').trim();
+        const text = stripSpokenContact(String(reply || '').trim());
         if (!text) throw new Error('empty reply');
         return respond('llm', text);
     } catch (err) {
@@ -319,6 +341,7 @@ module.exports = {
     sanitizeErrorMessage,
     publicListing,
     listingForModel,
+    stripSpokenContact,
     logChatResult,
     normalizeMessages,
     userTurns,
