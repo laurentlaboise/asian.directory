@@ -8,6 +8,10 @@
  * from the listing JSON only. Missing fields stay missing — no invented
  * wifi, hours, CEOs, or reviews.
  *
+ * SEO lock (Milan): chat is homepage-only. Never persist reply text into
+ * listing description, keywords, or static HTML. This module is read-only
+ * on the catalog — no add/update business, no file writes.
+ *
  * Model id is grok-4.3 (verified 2026-08-23 on docs.x.ai). grok-3-mini and
  * grok-4-fast are retired / redirected. Override with XAI_MODEL if needed.
  */
@@ -134,6 +138,25 @@ function listingForModel(row) {
 function logChatResult({ mode, query, n }) {
     const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     console.log(`chat mode=${mode} query=${q} n=${n}`);
+}
+
+/**
+ * Conversation analytics may store the user query and listing ids/cards.
+ * Spoken `reply` is dropped so it cannot land in description, keywords, or HTML.
+ */
+function omitChatReplyFromLog(body) {
+    const src = body && typeof body === 'object' ? body : {};
+    const userQuery = String(src.userQuery || '').trim();
+    const businessIds = Array.isArray(src.businessIds) ? src.businessIds : [];
+    const aiResponse = Array.isArray(src.aiResponse)
+        ? src.aiResponse.map((row) => {
+            if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+            const copy = { ...row };
+            delete copy.reply;
+            return copy;
+        })
+        : [];
+    return { userQuery, aiResponse, businessIds };
 }
 
 function normalizeMessages(raw) {
@@ -343,6 +366,7 @@ module.exports = {
     listingForModel,
     stripSpokenContact,
     logChatResult,
+    omitChatReplyFromLog,
     normalizeMessages,
     userTurns,
     latestUserText,

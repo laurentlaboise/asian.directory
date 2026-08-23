@@ -16,9 +16,12 @@ const {
     normalizeMessages,
     searchQueryFromMessages,
     buildSystemPrompt,
-    handleChatRequest
+    handleChatRequest,
+    omitChatReplyFromLog
 } = require('./chat');
 const { GREETING_LINE, EMPTY_LINE } = require('./search-query');
+const fs = require('fs');
+const path = require('path');
 
 const VANMAI_COFFEE = {
     id: 1725,
@@ -286,4 +289,52 @@ test('system prompt is the locked short text plus LISTINGS JSON', () => {
     assert.equal(getChatModel({}), 'grok-4.3');
     assert.equal(getChatApiKey({ XAI_API_KEY: ' a ', GROK_API_KEY: 'b' }), 'a');
     assert.equal(sanitizeErrorMessage(new Error('Bearer xai-abc failed')), 'Bearer [redacted] failed');
+});
+
+test('SEO lock: never persist spoken reply into description, keywords, or static HTML', () => {
+    const logged = omitChatReplyFromLog({
+        userQuery: 'best coffee places',
+        reply: 'Here are coffee spots. Call +856 20 5551234.',
+        aiResponse: [{
+            id: 1725,
+            name: 'Vanmai Coffee Cooperative',
+            description: 'Public listing from laoscoffee.org.',
+            keywords: ['coffee'],
+            reply: 'Here are coffee spots. Call +856 20 5551234.'
+        }],
+        businessIds: [1725]
+    });
+    assert.equal(logged.userQuery, 'best coffee places');
+    assert.equal(logged.aiResponse[0].reply, undefined);
+    assert.equal(logged.reply, undefined);
+    assert.equal(logged.aiResponse[0].description, 'Public listing from laoscoffee.org.');
+    assert.deepEqual(logged.businessIds, [1725]);
+
+    const chatSrc = fs.readFileSync(path.join(__dirname, 'chat.js'), 'utf8');
+    const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+    const indexSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const enSrc = fs.readFileSync(path.join(__dirname, '..', 'en', 'index.html'), 'utf8');
+
+    assert.doesNotMatch(chatSrc, /updateBusiness|addBusiness|writeFileSync|writeFile\(/);
+    const chatRoute = serverSrc.slice(
+        serverSrc.indexOf("app.post('/api/chat'"),
+        serverSrc.indexOf('// Dashboard stats', serverSrc.indexOf("app.post('/api/chat'"))
+    );
+    assert.doesNotMatch(chatRoute, /updateBusiness|addBusiness|writeFile|saveConversation/);
+    assert.match(indexSrc, /\$\{API_BASE_URL\}\/chat/);
+    assert.doesNotMatch(enSrc, /\/api\/chat|API_BASE_URL\}\/chat/);
+
+    const logFn = indexSrc.slice(
+        indexSrc.indexOf('const logConversation'),
+        indexSrc.indexOf('const searchOnlyFallback')
+    );
+    assert.doesNotMatch(logFn, /reply:/);
+    assert.match(logFn, /delete copy\.reply/);
+
+    const listingsDir = path.join(__dirname, '..', 'listings');
+    for (const file of fs.readdirSync(listingsDir)) {
+        if (!file.endsWith('.html')) continue;
+        const html = fs.readFileSync(path.join(listingsDir, file), 'utf8');
+        assert.doesNotMatch(html, /\/api\/chat/);
+    }
 });

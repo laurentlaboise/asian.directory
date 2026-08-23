@@ -11,7 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const packageJson = require('./package.json');
 const { reformulateWithHistory, parseHistoryParam } = require('./search-query');
-const { handleChatRequest } = require('./chat');
+const { handleChatRequest, omitChatReplyFromLog } = require('./chat');
 
 // ---------------------------------------------------------------------------
 // Database auto-detection: PostgreSQL when DATABASE_URL is set, else SQLite
@@ -1382,14 +1382,16 @@ app.delete('/api/businesses/:id', authenticateToken, async (req, res) => {
 
 app.post('/api/conversations', async (req, res) => {
     try {
-        const { userQuery, aiResponse, businessIds } = req.body;
-
-        if (!userQuery || !aiResponse) {
+        // SEO: ignore spoken reply. Logs are query + listing cards/ids only.
+        const raw = req.body || {};
+        if (!String(raw.userQuery || '').trim() || !Array.isArray(raw.aiResponse)) {
             return res.status(400).json({
                 success: false,
                 error: 'Missing required fields: userQuery, aiResponse'
             });
         }
+
+        const { userQuery, aiResponse, businessIds } = omitChatReplyFromLog(raw);
 
         if (!Array.isArray(aiResponse)) {
             return res.status(400).json({
@@ -1436,6 +1438,8 @@ app.get('/api/conversations', async (req, res) => {
 // Public homepage chat. No v1 API key. CSRF-exempt. Rate-limited like search
 // via the /api/ generalLimiter. Listings come from searchBusinesses; Grok is
 // optional when XAI_API_KEY or GROK_API_KEY is set.
+// SEO: read-only on the catalog. Never write reply text into description,
+// keywords, or static listing HTML. Homepage-only.
 app.post('/api/chat', async (req, res) => {
     try {
         const { messages, locale } = req.body || {};

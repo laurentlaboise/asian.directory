@@ -685,15 +685,23 @@
             scrollToBottom();
         };
 
+        // SEO: homepage-only analytics. Never send spoken reply; never write
+        // chat text into listing description, keywords, or static HTML.
         const logConversation = (prompt, results) => {
             if (!results.length) return;
+            const cards = results.slice(0, CHAT_CARD_LIMIT).map((row) => {
+                if (!row || typeof row !== 'object') return row;
+                const copy = { ...row };
+                delete copy.reply;
+                return copy;
+            });
             fetch(`${API_BASE_URL}/conversations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userQuery: prompt,
-                    aiResponse: results.slice(0, CHAT_CARD_LIMIT),
-                    businessIds: results.slice(0, CHAT_CARD_LIMIT).map((b) => b.id)
+                    aiResponse: cards,
+                    businessIds: cards.map((b) => b && b.id)
                 })
             }).catch((err) => console.error('Error saving conversation:', err));
         };
