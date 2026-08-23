@@ -1035,39 +1035,44 @@ function activityIcon(type) {
     return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icons[type] || icons.note}</svg>`;
 }
 
-// --- PIPELINE (Enhanced Kanban with stagnation & scores) ---
-let pipelineView = 'kanban'; // kanban or list
+// --- PIPELINE (full listing set, client-grouped kanban) ---
+const PIPELINE_STAGES = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive'];
+let pipelineBusinesses = [];
 
-async function renderPipeline(el) {
-    const [pipeRes, stagnantRes] = await Promise.all([
-        api('/crm/pipeline'),
-        api('/crm/stagnant?days=7').catch(() => ({ success: true, data: [] }))
-    ]);
-    if (!pipeRes?.success) { el.innerHTML = '<p class="text-red-500">Failed to load pipeline</p>'; return; }
+function groupBusinessesByStage(businesses) {
+    const grouped = Object.fromEntries(PIPELINE_STAGES.map(s => [s, []]));
+    for (const b of businesses) {
+        const stage = PIPELINE_STAGES.includes(b.pipeline_stage) ? b.pipeline_stage : 'new_lead';
+        grouped[stage].push(b);
+    }
+    return grouped;
+}
 
-    const stagnantIds = new Set((stagnantRes?.data || []).map(d => d.id));
+function pipelineCardHtml(b) {
+    const city = b.city ? `<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">${b.city}</div>` : '';
+    return `
+        <div class="pipeline-card bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer border border-gray-200 dark:border-gray-600 hover:shadow-md"
+             draggable="true" data-id="${b.id}"
+             ondragstart="event.dataTransfer.setData('text/plain','${b.id}')"
+             onclick="openEditBusiness(${b.id})">
+            <div class="font-medium text-sm truncate">${b.name || 'Untitled'}</div>
+            ${city}
+        </div>`;
+}
 
-    const stages = ['new_lead', 'contacted', 'in_review', 'verified', 'active_listing', 'inactive'];
+function paintPipelineBoard(el) {
+    const stages = PIPELINE_STAGES;
     const colors = { new_lead: 'border-blue-400', contacted: 'border-yellow-400', in_review: 'border-orange-400', verified: 'border-green-400', active_listing: 'border-emerald-400', inactive: 'border-gray-400' };
-    const bgColors = { new_lead: 'bg-blue-400', contacted: 'bg-yellow-400', in_review: 'bg-orange-400', verified: 'bg-green-400', active_listing: 'bg-emerald-400', inactive: 'bg-gray-400' };
-    const totalInPipeline = stages.reduce((sum, s) => sum + (pipeRes.data[s] || []).length, 0);
+    const grouped = groupBusinessesByStage(pipelineBusinesses);
 
     el.innerHTML = `
-        <!-- Stage Progress Bar -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 mb-4">
-            <div class="flex rounded-full overflow-hidden h-3">
-                ${stages.filter(s => s !== 'inactive').map(s => {
-                    const count = (pipeRes.data[s] || []).length;
-                    const pct = totalInPipeline > 0 ? (count / totalInPipeline * 100) : 0;
-                    return pct > 0 ? `<div class="${bgColors[s]} opacity-80" style="width:${pct}%" title="${stageLabel(s)}: ${count}"></div>` : '';
-                }).join('')}
-            </div>
-            <div class="flex justify-between mt-2 text-[10px] text-gray-500">${stages.filter(s => s !== 'inactive').map(s => `<span>${stageLabel(s)}</span>`).join('')}</div>
+        <div class="flex items-baseline justify-between mb-4">
+            <h2 class="text-lg font-semibold">Pipeline</h2>
+            <span class="text-sm text-gray-500 dark:text-gray-400">${pipelineBusinesses.length} listings</span>
         </div>
-        <!-- Kanban Board -->
         <div class="flex gap-3 overflow-x-auto pb-4" style="min-height:500px">
             ${stages.map(stage => {
-                const items = pipeRes.data[stage] || [];
+                const items = grouped[stage];
                 return `
                 <div class="pipeline-col flex-shrink-0 w-64 bg-gray-100 dark:bg-gray-800 rounded-xl p-3 border-t-4 ${colors[stage]}" data-stage="${stage}"
                      ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -1075,30 +1080,10 @@ async function renderPipeline(el) {
                      ondrop="handleDrop(event,'${stage}');this.classList.remove('drag-over')">
                     <h3 class="font-semibold text-sm mb-3 flex justify-between items-center">
                         ${stageLabel(stage)}
-                        <span class="text-xs bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full">${items.length}</span>
+                        <span class="pipeline-col-count text-xs bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full">${items.length}</span>
                     </h3>
-                    <div class="space-y-2">
-                        ${items.map(b => {
-                            const isStagnant = stagnantIds.has(b.id);
-                            const daysSinceUpdate = daysAgo(b.updated_at);
-                            return `
-                            <div class="pipeline-card bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer border ${isStagnant ? 'border-red-300 dark:border-red-700 stagnant-pulse' : 'border-gray-200 dark:border-gray-600'} hover:shadow-md"
-                                 draggable="true" data-id="${b.id}"
-                                 ondragstart="event.dataTransfer.setData('text/plain','${b.id}')"
-                                 onclick="openEditBusiness(${b.id})">
-                                <div class="flex justify-between items-start">
-                                    <div class="font-medium text-sm flex-1">${b.name}</div>
-                                    ${isStagnant ? '<span class="text-[10px] bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 px-1.5 py-0.5 rounded-full ml-1 whitespace-nowrap">' + daysSinceUpdate + 'd</span>' : ''}
-                                </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${b.category}${b.country ? ' - ' + b.country : ''}</div>
-                                <div class="flex items-center justify-between mt-2">
-                                    ${badge(b.priority, 'priority')}
-                                    <button class="text-xs text-yellow-500 hover:text-yellow-600" onclick="event.stopPropagation();quickActivity(${b.id},'${b.name}')" title="Log activity">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-                                    </button>
-                                </div>
-                            </div>`;
-                        }).join('')}
+                    <div class="pipeline-cards space-y-2 overflow-y-auto" style="max-height:calc(100vh - 220px)">
+                        ${items.map(pipelineCardHtml).join('')}
                     </div>
                 </div>`;
             }).join('')}
@@ -1106,15 +1091,28 @@ async function renderPipeline(el) {
     `;
 }
 
+async function renderPipeline(el) {
+    const res = await api('/businesses');
+    if (!res?.success) { el.innerHTML = '<p class="text-red-500">Failed to load pipeline</p>'; return; }
+    pipelineBusinesses = res.data || [];
+    paintPipelineBoard(el);
+}
+
 async function handleDrop(event, newStage) {
     event.preventDefault();
-    const bizId = parseInt(event.dataTransfer.getData('text/plain'));
+    const bizId = parseInt(event.dataTransfer.getData('text/plain'), 10);
     if (!bizId) return;
 
-    const res = await api(`/businesses/${bizId}`, { method: 'PATCH', body: { field: 'pipeline_stage', value: newStage } });
+    const biz = pipelineBusinesses.find(b => b.id === bizId);
+    if (biz && biz.pipeline_stage === newStage) return;
+
+    // Backend PATCH loops Object.entries(req.body) as field → value.
+    const res = await api(`/businesses/${bizId}`, { method: 'PATCH', body: { pipeline_stage: newStage } });
     if (res?.success) {
+        if (biz) biz.pipeline_stage = newStage;
+        const board = document.getElementById('main-content');
+        if (board) paintPipelineBoard(board);
         toast(`Moved to ${stageLabel(newStage)}`);
-        renderPipeline(document.getElementById('main-content'));
     } else {
         toast(res?.error || 'Failed to update', 'error');
     }
