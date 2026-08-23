@@ -3,10 +3,12 @@
 /**
  * Homepage conversational layer.
  *
- * Search still comes from search-query.js + searchBusinesses.
- * If XAI_API_KEY (or GROK_API_KEY) is set, a short Grok reply is written
- * from the listing JSON only. Missing fields stay missing — no invented
- * wifi, hours, CEOs, or reviews.
+ * Official asian.directory voice lives in SYSTEM_PROMPT_TEXT. Greetings and
+ * vague need asks (hungry / what should I eat / bored / help) clarify first
+ * and never search junk tokens. Specified turns still use search-query.js +
+ * searchBusinesses. If XAI_API_KEY (or GROK_API_KEY) is set, a short Grok
+ * reply is written from the listing JSON only. Missing fields stay missing —
+ * no invented wifi, hours, CEOs, or reviews.
  *
  * SEO lock (Milan): chat is homepage-only. Never persist reply text into
  * listing description, keywords, or static HTML. This module is read-only
@@ -22,7 +24,10 @@ const {
     parseSearchQuery,
     buildAssistantLine,
     buildFollowUpChips,
-    tokenize
+    tokenize,
+    isGreeting,
+    isFollowUp,
+    mentionsOutsideCoverage
 } = require('./search-query');
 
 const CHAT_LISTING_LIMIT = 8;
@@ -34,11 +39,26 @@ const XAI_TIMEOUT_MS = 20000;
 const DEFAULT_XAI_MODEL = 'grok-4.3';
 
 const ALLOWED_ROLES = new Set(['user', 'assistant']);
-const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank.';
+const SYSTEM_PROMPT_TEXT = 'You are asian.directory\'s conversational assistant for a SEA business directory (strongest in Laos: Vientiane, Luang Prabang; expanding Thailand, Vietnam, Cambodia). Warm, lightly local, polite, never pushy. Reply in 1–3 short sentences. No emojis unless the user used one. No hype (amazing, must-try, best in the world). Help people find real catalog businesses. Never invent listings, amenities, reviews, prices, hours, wifi, contact, or features. Use ONLY the listing JSON below (name, city, category, website). Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. If vague (e.g. "I\'m hungry", "what should I eat?") ask 1–2 clarifying questions (cuisine and city). Do not invent places. Hello: short welcome, ask eat/drink/stay/other + city. After search: one natural sentence reflecting intent; cards stay the star. Missing amenity: say "I don’t have that information for these places yet." Do not infer quieter or laptop-friendly from descriptions. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank. Stay on directory purpose; politely decline unrelated asks. If they ask Tokyo/Seoul etc., say strongest coverage is SEA/Laos.';
 
 const AMENITY_QUALITY_CUES = new Set([
     'wifi', 'hours', 'reviews', 'review', 'working', 'work', 'laptop', 'laptops'
 ]);
+
+const VAGUE_FOOD_TOKENS = new Set(['hungry', 'eat', 'food']);
+const VAGUE_NEED_TOKENS = new Set(['hungry', 'eat', 'food', 'bored', 'help']);
+
+const GREETING_REPLY = 'Welcome. Looking to eat, drink, stay, or something else — and in which city?';
+const FOOD_CLARIFY_REPLY = 'What kind of food, and in which city?';
+const NEED_CLARIFY_REPLY = 'What are you looking for, and in which city?';
+const MISSING_AMENITY_REPLY = 'I don’t have that information for these places yet.';
+const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Laos — Vientiane and Luang Prabang especially.';
+
+const CLARIFY_CHIPS = {
+    greeting: ['Eat?', 'Coffee?', 'Vientiane?'],
+    food: ['Sushi?', 'Coffee?', 'Vientiane?'],
+    need: ['Coffee?', 'Hotels?', 'Vientiane?']
+};
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_RE = /(?:\+?\d[\d\s().-]{6,}\d)/g;
@@ -171,6 +191,57 @@ function isAmenityFollowUp(query) {
     const text = String(query || '');
     if (/\bgood\s+for\b/i.test(text)) return true;
     return tokenize(text).some((token) => AMENITY_QUALITY_CUES.has(token));
+}
+
+function isGreetingTurn(query) {
+    if (isGreeting(query)) return true;
+    const text = String(query || '').trim().toLowerCase();
+    return /^(good\s+)?(morning|afternoon|evening|day)[.!?]*$/.test(text);
+}
+
+function detectClarifyKind(query) {
+    if (isGreetingTurn(query)) return 'greeting';
+
+    const text = String(query || '').trim().toLowerCase();
+    if (
+        /\bwhat should i eat\b/.test(text)
+        || /\bwhat to eat\b/.test(text)
+        || /\b(i['’]?m|i am)\s+hungry\b/.test(text)
+        || /\bwhere (can|should|do) i (eat|go)\b/.test(text)
+    ) {
+        return 'food';
+    }
+    if (/^(please\s+)?help(\s+me)?[.!?]*$/.test(text)) return 'need';
+
+    const tokens = tokenize(text);
+    const terms = parseSearchQuery(query).contentTerms || [];
+
+    if (terms.length && terms.every((term) => VAGUE_NEED_TOKENS.has(term))) {
+        return terms.some((term) => VAGUE_FOOD_TOKENS.has(term)) ? 'food' : 'need';
+    }
+
+    if (!terms.length) {
+        if (tokens.some((token) => VAGUE_FOOD_TOKENS.has(token))) return 'food';
+        if (tokens.some((token) => VAGUE_NEED_TOKENS.has(token))) return 'need';
+    }
+
+    return null;
+}
+
+function shouldClarify(latest, historyTurns) {
+    if (isAmenityFollowUp(latest)) return null;
+    if ((historyTurns || []).length && isFollowUp(latest)) return null;
+    return detectClarifyKind(latest);
+}
+
+function clarifyReply(kind) {
+    if (kind === 'greeting') return GREETING_REPLY;
+    if (kind === 'food') return FOOD_CLARIFY_REPLY;
+    return NEED_CLARIFY_REPLY;
+}
+
+function clarifyChips(kind) {
+    return (CLARIFY_CHIPS[kind] || CLARIFY_CHIPS.need).slice();
 }
 
 function logChatResult({ mode, query, n }) {
@@ -336,6 +407,27 @@ async function handleChatRequest({
         return { status: 400, body: { success: false, error: normalized.error } };
     }
 
+    const latest = latestUserText(normalized.messages);
+    const historyTurns = userTurns(normalized.messages).slice(0, -1);
+    const clarifyKind = shouldClarify(latest, historyTurns);
+
+    if (clarifyKind) {
+        const chips = clarifyChips(clarifyKind);
+        const spoken = sanitizeSpokenReply(clarifyReply(clarifyKind), []);
+        logChatResult({ mode: 'clarify', query: latest, n: 0 });
+        return {
+            status: 200,
+            body: {
+                success: true,
+                mode: 'clarify',
+                reply: spoken,
+                listings: [],
+                chips,
+                query: latest
+            }
+        };
+    }
+
     const query = searchQueryFromMessages(normalized.messages);
     const parsed = parseSearchQuery(query);
     let all = [];
@@ -352,6 +444,12 @@ async function handleChatRequest({
     const modelListings = listings.map(listingForModel).filter(Boolean);
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
+    const amenityFollowUp = isAmenityFollowUp(latest);
+    const searchReply = amenityFollowUp
+        ? MISSING_AMENITY_REPLY
+        : (!listings.length && mentionsOutsideCoverage(query || latest)
+            ? OUTSIDE_COVERAGE_REPLY
+            : template.reply);
 
     const respond = (mode, reply) => {
         const spoken = sanitizeSpokenReply(reply, modelListings);
@@ -369,10 +467,9 @@ async function handleChatRequest({
         };
     };
 
-    const latest = latestUserText(normalized.messages);
     const apiKey = getChatApiKey(env);
-    if (!apiKey || isAmenityFollowUp(latest)) {
-        return respond('search', template.reply);
+    if (!apiKey || amenityFollowUp || !modelListings.length) {
+        return respond('search', searchReply);
     }
 
     try {
@@ -389,7 +486,7 @@ async function handleChatRequest({
         return respond('llm', text);
     } catch (err) {
         console.error('Chat provider failed:', sanitizeErrorMessage(err));
-        return respond('search', template.reply);
+        return respond('search', searchReply);
     }
 }
 
@@ -414,6 +511,17 @@ module.exports = {
     latestUserText,
     searchQueryFromMessages,
     isAmenityFollowUp,
+    isGreetingTurn,
+    detectClarifyKind,
+    shouldClarify,
+    clarifyReply,
+    clarifyChips,
+    GREETING_REPLY,
+    FOOD_CLARIFY_REPLY,
+    NEED_CLARIFY_REPLY,
+    MISSING_AMENITY_REPLY,
+    OUTSIDE_COVERAGE_REPLY,
+    VAGUE_NEED_TOKENS,
     buildSystemPrompt,
     completeWithXai,
     handleChatRequest

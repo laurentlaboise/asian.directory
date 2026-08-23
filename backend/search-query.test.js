@@ -171,6 +171,11 @@ test('conversational prompts drop leftover tokens that are not in listing text',
     assert.equal(parseSearchQuery('hi').isEmpty, true);
     assert.equal(parseSearchQuery('hey please').isEmpty, true);
     assert.ok(!parseSearchQuery('hello').contentTerms.includes('hello'));
+    assert.deepEqual(parseSearchQuery("I'm hungry").contentTerms, []);
+    assert.deepEqual(parseSearchQuery('what should I eat?').contentTerms, []);
+    assert.deepEqual(parseSearchQuery('bored').contentTerms, []);
+    assert.deepEqual(parseSearchQuery('help').contentTerms, []);
+    assert.deepEqual(parseSearchQuery('sushi in Vientiane').contentTerms, ['sushi', 'vientiane']);
 });
 
 test('retry uses the strongest leftover token (coffee, not the city)', () => {

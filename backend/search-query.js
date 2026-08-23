@@ -36,6 +36,8 @@ const STOPWORDS = new Set([
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'business', 'businesses',
+    // Vague / junk tokens. Do not AND these into SQL or treat them as a category.
+    'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help',
     // Amenity / quality follow-ups. They refine a prior city+category; they are
     // not listing text and must not AND into SQL (wifi/working would zero the set).
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
