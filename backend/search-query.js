@@ -19,7 +19,9 @@
  *     (never by dropping a cuisine/style when a place word is also present)
  *   - ranks name/category hits above description/address matches
  *   - consumer food/drink/stay queries boost cafes/restaurants/hotels and
- *     demote factories/machineries (factories still match, just later)
+ *     demote factories/machineries/associations (factories still match, just later)
+ *   - cafe/café/coffee house/coffee shop in the NAME beats messy Manufacture /
+ *     Business Services / Association categories (name+category text only)
  *   - mapped primary/sub (categories.js) are query aliases and ranking
  *     signals: restaurants matches restaurant/cafe/hotel tokens already
  *     on the row; food_drink/hotels_travel/legal beat industry parents
@@ -155,7 +157,11 @@ const INDUSTRIAL_SIGNALS = [
     'agriculture', 'agric', 'garment', 'importer', 'cold storage',
     'import-export'
 ];
+const NAME_CAFE_SIGNALS = [
+    'coffee shop', 'coffee house', 'cafe', 'café'
+];
 const CONSUMER_BOOST = 80;
+const NAME_CAFE_BOOST = 120;
 const INDUSTRIAL_DEMOTE = 90;
 const BUSINESS_SERVICES_DEMOTE = 20;
 const TAXONOMY_PARENT_BOOST = 40;
@@ -475,6 +481,19 @@ function looksIndustrial(business) {
     return hasSignal(listingFaceText(business), INDUSTRIAL_SIGNALS);
 }
 
+function looksAssociation(business) {
+    return hasSignal(listingFaceText(business), ['association']);
+}
+
+/**
+ * Consumer cafe cue from the listing NAME only. Do not read description.
+ * "Coffee Fix" / "Miracle Coffee Factory" do not match; "ASTER COFFEE HOUSE" does.
+ */
+function nameLooksCafe(business) {
+    const name = haystack(decodeMojibake(business && business.name));
+    return hasSignal(name, NAME_CAFE_SIGNALS);
+}
+
 function isConsumerIntentQuery(parsed) {
     return ((parsed && parsed.contentTerms) || []).some((term) => CONSUMER_INTENTS.has(term));
 }
@@ -501,13 +520,14 @@ function decodeListingFields(business) {
 }
 
 function scoreBusiness(business, parsed) {
-    const name = haystack(business && business.name);
-    const category = haystack(business && business.category);
-    const description = haystack(business && business.description);
-    const address = haystack(business && business.address);
-    const keywords = haystack(business && business.keywords);
-    const city = haystack(business && business.city);
-    const country = haystack(business && business.country);
+    const row = decodeListingFields(business);
+    const name = haystack(row && row.name);
+    const category = haystack(row && row.category);
+    const description = haystack(row && row.description);
+    const address = haystack(row && row.address);
+    const keywords = haystack(row && row.keywords);
+    const city = haystack(row && row.city);
+    const country = haystack(row && row.country);
 
     const mapped = mapListing(business);
     const mappedHay = [mapped.primary, mapped.sub, mapped.label].join(' ').toLowerCase();
@@ -544,11 +564,18 @@ function scoreBusiness(business, parsed) {
     }
 
     if (isConsumerIntentQuery(parsed)) {
-        if (looksConsumerFacing(business)) {
-            score += CONSUMER_BOOST;
-        } else if (isConsumerPlaceQuery(parsed) && looksIndustrial(business)) {
+        // Name cafe/café/coffee house/coffee shop beats messy industrial categories.
+        // Association orgs ("Hotel and Restaurant Association") stay demoted even
+        // when hotel/restaurant appears in the name.
+        if (nameLooksCafe(row)) {
+            score += NAME_CAFE_BOOST;
+        } else if (isConsumerPlaceQuery(parsed) && looksAssociation(row)) {
             score -= INDUSTRIAL_DEMOTE;
-        } else if (isConsumerPlaceQuery(parsed) && listingFaceText(business).includes('business services')) {
+        } else if (looksConsumerFacing(row)) {
+            score += CONSUMER_BOOST;
+        } else if (isConsumerPlaceQuery(parsed) && looksIndustrial(row)) {
+            score -= INDUSTRIAL_DEMOTE;
+        } else if (isConsumerPlaceQuery(parsed) && listingFaceText(row).includes('business services')) {
             score -= BUSINESS_SERVICES_DEMOTE;
         }
     }
@@ -557,12 +584,14 @@ function scoreBusiness(business, parsed) {
     if (consumerParents.size) {
         if (consumerParents.has(mapped.primary) && CONSUMER_PARENTS.has(mapped.primary)) {
             score += TAXONOMY_PARENT_BOOST;
-        } else if (INDUSTRY_PARENTS.has(mapped.primary)) {
+        } else if (!nameLooksCafe(row) && INDUSTRY_PARENTS.has(mapped.primary)) {
+            // Cafe/café/coffee house names keep their boost even if category
+            // maps to Manufacture or another industry parent.
             score -= TAXONOMY_INDUSTRY_DEMOTE;
         }
     }
 
-    if (business && business.is_featured) score += 5;
+    if (row && row.is_featured) score += 5;
     return score;
 }
 
@@ -744,6 +773,8 @@ module.exports = {
     CONSUMER_INTENTS,
     CONSUMER_SIGNALS,
     INDUSTRIAL_SIGNALS,
+    NAME_CAFE_SIGNALS,
+    nameLooksCafe,
     GREETING_LINE,
     EMPTY_LINE,
     EMPTY_OUTSIDE_LINE,

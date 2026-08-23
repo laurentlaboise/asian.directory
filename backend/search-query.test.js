@@ -12,6 +12,7 @@ const {
     decodeMojibake,
     mapListing,
     termAliases,
+    nameLooksCafe,
     isGreeting,
     isFollowUp,
     reformulateWithHistory,
@@ -202,6 +203,58 @@ const STATE_FOOD_GARMENT = {
     name: 'Vientiane State Food Enterprise',
     category: 'Garment',
     description: 'Vientiane State Food Enterprise is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const HOTEL_ASSOCIATION = {
+    id: 209,
+    name: 'Hotel and Restaurant Association of Lao PDR',
+    category: 'Association',
+    description: 'Hotel and Restaurant Association of Lao PDR is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const SALANA_HOTEL = {
+    id: 486,
+    name: 'Salana Boutique Hotel',
+    category: 'tourism',
+    description: 'Salana Boutique Hotel is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const VILLA_MALY_HOTEL = {
+    id: 1167,
+    name: 'Villa Maly Boutique Hotel',
+    category: 'tourism',
+    description: 'Villa Maly Boutique Hotel is a hotel in Luang Prabang.',
+    address: 'Luang Prabang, Laos',
+    country: 'LA',
+    city: 'Luang Prabang',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const SINOUK_CAFE = {
+    id: 917,
+    name: 'Sinouk Café LAO., LTD',
+    category: 'Manufacture',
+    description: 'Sinouk Café LAO., LTD is listed in the LNCCI Membership Directory.',
     address: 'Vientiane, Lao PDR',
     country: 'LA',
     city: 'Vientiane',
@@ -598,4 +651,43 @@ test('search payload decodes mojibake on listing name and description', () => {
     );
     assert.equal(ranked[0].name, 'Café Sinouk');
     assert.equal(ranked[0].description, 'Café in Vientiane');
+});
+
+test('coffee name cafe/café/coffee house beats Manufacture and Business Services', () => {
+    const parsed = parseSearchQuery('coffee');
+    assert.equal(nameLooksCafe(ASTER_COFFEE_HOUSE), true);
+    assert.equal(nameLooksCafe(SINOUK_CAFE), true);
+    assert.equal(nameLooksCafe({ name: 'CafÃ© Sinouk', category: 'Manufacture' }), true);
+    assert.equal(nameLooksCafe(COMMA_COFFEE), false);
+    assert.equal(nameLooksCafe(COFFEE_FIX), false);
+    assert.equal(nameLooksCafe(MIRACLE_COFFEE_FACTORY), false);
+
+    const ranked = rankBusinesses(
+        [YUNI_COFFEE, COFFEE_FIX, MIRACLE_COFFEE_FACTORY, SINOUK_CAFE, ASTER_COFFEE_HOUSE],
+        parsed
+    );
+    const names = ranked.map((row) => row.name);
+    assert.ok(names.indexOf('ASTER COFFEE HOUSE') < names.indexOf('Yuni Coffee Company, Ltd.'));
+    assert.ok(names.indexOf('Sinouk Café LAO., LTD') < names.indexOf('Yuni Coffee Company, Ltd.'));
+    assert.ok(names.indexOf('Sinouk Café LAO., LTD') < names.indexOf('Coffee Fix'));
+    assert.ok(names.indexOf('Sinouk Café LAO., LTD') < names.indexOf('Miracle Lao Coffee Factory Sole Co.,Ltd'));
+    assert.ok(scoreBusiness(SINOUK_CAFE, parsed) > scoreBusiness(YUNI_COFFEE, parsed));
+    assert.ok(scoreBusiness(SINOUK_CAFE, parsed) > scoreBusiness(COFFEE_FIX, parsed));
+    assert.equal(SINOUK_CAFE.category, 'Manufacture');
+});
+
+test('hotel queries demote Hotel and Restaurant Association below actual hotels', () => {
+    const parsed = parseSearchQuery('hotel');
+    const ranked = rankBusinesses(
+        [HOTEL_ASSOCIATION, SALANA_HOTEL, VILLA_MALY_HOTEL],
+        parsed
+    );
+    const names = ranked.map((row) => row.name);
+    assert.ok(names.indexOf('Salana Boutique Hotel') < names.indexOf('Hotel and Restaurant Association of Lao PDR'));
+    assert.ok(names.indexOf('Villa Maly Boutique Hotel') < names.indexOf('Hotel and Restaurant Association of Lao PDR'));
+    assert.ok(names.includes('Hotel and Restaurant Association of Lao PDR'), 'association still matches, just later');
+    assert.ok(scoreBusiness(SALANA_HOTEL, parsed) > scoreBusiness(HOTEL_ASSOCIATION, parsed));
+    assert.ok(scoreBusiness(VILLA_MALY_HOTEL, parsed) > scoreBusiness(HOTEL_ASSOCIATION, parsed));
+    assert.equal(HOTEL_ASSOCIATION.category, 'Association');
+    assert.equal(SALANA_HOTEL.category, 'tourism');
 });

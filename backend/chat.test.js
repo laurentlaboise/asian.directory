@@ -524,6 +524,31 @@ test('vague food and need asks clarify before search and skip junk listings', as
     }
 });
 
+test('hungry chips do not include Sushi when searchBusinesses(sushi) is empty', async () => {
+    const probed = [];
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: "I'm hungry" }],
+        env: {},
+        searchBusinesses: async (query) => {
+            probed.push(query);
+            if (/sushi/i.test(query)) return [];
+            if (/coffee/i.test(query)) return [VANMAI_COFFEE];
+            return [];
+        }
+    });
+    assert.equal(result.body.mode, 'clarify');
+    assert.deepEqual(result.body.listings, []);
+    assert.ok(probed.some((query) => /sushi/i.test(query)));
+    assert.deepEqual(
+        probed.filter((query) => /sushi/i.test(query)).map((query) => parseSearchQuery(query).contentTerms),
+        [['sushi']]
+    );
+    assert.ok(!result.body.chips.includes('Sushi?'));
+    assert.ok(result.body.chips.includes('Coffee?'));
+    assert.ok(result.body.chips.includes('Vientiane?'));
+    assert.ok(!result.body.chips.some((chip) => /Hotels|Travel|Lawyers|Banks|Construction/i.test(chip)));
+});
+
 test('after a vague ask, sushi in Vientiane runs the existing planner', async () => {
     const SUSHI = {
         id: 1801,
