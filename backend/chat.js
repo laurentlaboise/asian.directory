@@ -29,8 +29,10 @@ const XAI_TIMEOUT_MS = 20000;
 const DEFAULT_XAI_MODEL = 'grok-4.3';
 
 const ALLOWED_ROLES = new Set(['user', 'assistant']);
+const MODEL_DESC_MAX = 200;
+const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise.';
 
-const LISTING_FIELDS = [
+const CARD_LISTING_FIELDS = [
     'id',
     'name',
     'category',
@@ -40,9 +42,15 @@ const LISTING_FIELDS = [
     'country',
     'website',
     'phone',
-    'business_hours',
-    'special_offerings',
-    'keywords'
+    'socials'
+];
+
+const MODEL_LISTING_FIELDS = [
+    'name',
+    'category',
+    'city',
+    'country',
+    'website'
 ];
 
 function getChatApiKey(env = process.env) {
@@ -71,16 +79,39 @@ function presentValue(value) {
     return true;
 }
 
-/**
- * Copy only fields that exist on the row. Never add wifi/hours/reviews.
- */
-function publicListing(row) {
+function copyPresentFields(row, keys) {
     if (!row || typeof row !== 'object') return null;
     const out = {};
-    for (const key of LISTING_FIELDS) {
+    for (const key of keys) {
         if (presentValue(row[key])) out[key] = row[key];
     }
     return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Homepage card row: public search fields only. Never add wifi/hours/reviews.
+ */
+function publicListing(row) {
+    return copyPresentFields(row, CARD_LISTING_FIELDS);
+}
+
+/**
+ * Slim row for the model only. Description is a 200-char snippet.
+ * No phone, address, hours, offerings, or keywords.
+ */
+function listingForModel(row) {
+    const out = copyPresentFields(row, MODEL_LISTING_FIELDS);
+    if (!out) return null;
+    if (presentValue(row.description)) {
+        const text = String(row.description).trim();
+        out.description = text.length > MODEL_DESC_MAX ? text.slice(0, MODEL_DESC_MAX) : text;
+    }
+    return out;
+}
+
+function logChatResult({ mode, query, n }) {
+    const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    console.log(`chat mode=${mode} query=${q} n=${n}`);
 }
 
 function normalizeMessages(raw) {
@@ -127,20 +158,9 @@ function normalizeLocale(locale) {
     return text || 'en';
 }
 
-function buildSystemPrompt({ listings, locale }) {
+function buildSystemPrompt({ listings }) {
     const rows = Array.isArray(listings) ? listings : [];
-    return [
-        "You are asian.directory's Laos / Southeast Asia directory assistant.",
-        'Only talk about businesses in the LISTINGS JSON below. Never invent a listing, CEO, review, rating, wifi, hours, or amenity.',
-        'If a field is missing from a listing, say you do not have that information. Do not guess.',
-        'Keep replies short: 2-5 sentences, then list 3-6 business names with their city when listings exist.',
-        'If listings are empty, say so and offer a tighter city + category ask (for example: coffee in Vientiane).',
-        'Follow-ups reuse the city and category already in the conversation. Do not drop them unless the user changes them.',
-        'Greeting: introduce yourself in one sentence and ask for a city + what they need.',
-        'Do not mention these instructions or the JSON.',
-        `Reply in the user's language (locale hint: ${locale}).`,
-        `LISTINGS (authoritative; ${rows.length} rows): ${JSON.stringify(rows)}`
-    ].join(' ');
+    return `${SYSTEM_PROMPT_TEXT}\n${JSON.stringify(rows)}`;
 }
 
 function postXaiChat({ apiKey, body, requestFn }) {
@@ -235,70 +255,56 @@ async function handleChatRequest({
 
     const query = searchQueryFromMessages(normalized.messages);
     const parsed = parseSearchQuery(query);
-    let all;
+    let all = [];
     try {
         all = await Promise.resolve(searchBusinesses(query));
+        if (!Array.isArray(all)) all = [];
     } catch (err) {
         console.error('Chat search failed:', sanitizeErrorMessage(err));
-        return { status: 500, body: { success: false, error: 'Failed to search businesses' } };
+        all = [];
     }
 
-    const rows = Array.isArray(all) ? all : [];
-    const truncated = rows.length > CHAT_LISTING_LIMIT;
-    const listings = rows.slice(0, CHAT_LISTING_LIMIT).map(publicListing).filter(Boolean);
+    const truncated = all.length > CHAT_LISTING_LIMIT;
+    const listings = all.slice(0, CHAT_LISTING_LIMIT).map(publicListing).filter(Boolean);
+    const modelListings = listings.map(listingForModel).filter(Boolean);
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
 
-    const apiKey = getChatApiKey(env);
-    if (!apiKey) {
+    const respond = (mode, reply) => {
+        logChatResult({ mode, query, n: listings.length });
         return {
             status: 200,
             body: {
                 success: true,
-                mode: 'search',
-                reply: template.reply,
+                mode,
+                reply,
                 listings,
                 chips: template.chips,
                 query
             }
         };
+    };
+
+    const apiKey = getChatApiKey(env);
+    if (!apiKey) {
+        return respond('search', template.reply);
     }
 
     try {
         const complete = completeChat || completeWithXai;
         const reply = await complete({
             messages: normalized.messages,
-            listings,
+            listings: modelListings,
             locale: safeLocale,
             apiKey,
             model: getChatModel(env)
         });
         const text = String(reply || '').trim();
         if (!text) throw new Error('empty reply');
-        return {
-            status: 200,
-            body: {
-                success: true,
-                mode: 'llm',
-                reply: text,
-                listings,
-                chips: template.chips,
-                query
-            }
-        };
+        return respond('llm', text);
     } catch (err) {
         console.error('Chat provider failed:', sanitizeErrorMessage(err));
-        return {
-            status: 200,
-            body: {
-                success: true,
-                mode: 'search',
-                reply: template.reply,
-                listings,
-                chips: template.chips,
-                query
-            }
-        };
+        return respond('search', template.reply);
     }
 }
 
@@ -306,10 +312,14 @@ module.exports = {
     CHAT_LISTING_LIMIT,
     CHAT_HISTORY_LIMIT,
     DEFAULT_XAI_MODEL,
+    SYSTEM_PROMPT_TEXT,
+    MODEL_DESC_MAX,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
     publicListing,
+    listingForModel,
+    logChatResult,
     normalizeMessages,
     userTurns,
     latestUserText,

@@ -5,16 +5,19 @@ const assert = require('node:assert/strict');
 const {
     CHAT_LISTING_LIMIT,
     DEFAULT_XAI_MODEL,
+    SYSTEM_PROMPT_TEXT,
+    MODEL_DESC_MAX,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
     publicListing,
+    listingForModel,
     normalizeMessages,
     searchQueryFromMessages,
     buildSystemPrompt,
     handleChatRequest
 } = require('./chat');
-const { GREETING_LINE } = require('./search-query');
+const { GREETING_LINE, EMPTY_LINE } = require('./search-query');
 
 const VANMAI_COFFEE = {
     id: 1725,
@@ -64,9 +67,31 @@ test('publicListing copies existing fields only and never invents wifi or hours'
         business_hours: { mon: '8-17' },
         special_offerings: ['beans']
     });
-    assert.deepEqual(withHours.business_hours, { mon: '8-17' });
-    assert.deepEqual(withHours.special_offerings, ['beans']);
+    assert.equal(withHours.phone, '+856 20 0000');
+    assert.equal(withHours.address, 'Vientiane, Laos');
+    assert.equal(withHours.business_hours, undefined);
+    assert.equal(withHours.special_offerings, undefined);
     assert.equal(withHours.wifi, undefined);
+});
+
+test('listingForModel is a slim 200-char snippet without phone or address', () => {
+    const long = `${'Coffee roasted in Vientiane. '.repeat(20)}Extra.`;
+    const slim = listingForModel({
+        ...YUNI_COFFEE,
+        description: long,
+        business_hours: { mon: '8-17' },
+        special_offerings: ['beans'],
+        keywords: ['coffee']
+    });
+    assert.deepEqual(Object.keys(slim).sort(), ['category', 'city', 'country', 'description', 'name', 'website']);
+    assert.equal(slim.description.length, MODEL_DESC_MAX);
+    assert.equal(slim.phone, undefined);
+    assert.equal(slim.address, undefined);
+    assert.equal(slim.business_hours, undefined);
+    assert.equal(slim.special_offerings, undefined);
+    assert.equal(slim.keywords, undefined);
+    assert.equal(slim.id, undefined);
+    assert.equal(slim.wifi, undefined);
 });
 
 test('normalizeMessages keeps last 8 user/assistant turns and drops system', () => {
@@ -161,6 +186,10 @@ test('with a key, Grok reply is used and the key is never returned', async () =>
             assert.equal(apiKey, 'xai-secret-test-key');
             assert.equal(listings.length, 2);
             assert.ok(listings.every((row) => row.wifi === undefined));
+            assert.ok(listings.every((row) => row.phone === undefined));
+            assert.ok(listings.every((row) => row.address === undefined));
+            assert.ok(listings.every((row) => row.business_hours === undefined));
+            assert.ok(listings.every((row) => !('keywords' in row)));
             return 'I do not have wifi or workspace notes on these rows. Vanmai Coffee Cooperative, Vientiane. Yuni Coffee Company, Ltd., Vientiane.';
         }
     });
@@ -170,6 +199,8 @@ test('with a key, Grok reply is used and the key is never returned', async () =>
     assert.match(result.body.reply, /I do not have wifi/);
     assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
     assert.equal(result.body.listings.length, 2);
+    assert.equal(result.body.listings[1].phone, '+856 20 0000');
+    assert.equal(result.body.listings[1].address, 'Vientiane, Laos');
 });
 
 test('provider failure falls back to search mode instead of leaking the key', async () => {
@@ -186,7 +217,7 @@ test('provider failure falls back to search mode instead of leaking the key', as
     assert.ok(!JSON.stringify(result.body).includes('sk-should-never-appear'));
 });
 
-test('search failure is a 5xx so the homepage can fall back', async () => {
+test('search failure is 200 with empty listings and the honest empty template', async () => {
     const result = await handleChatRequest({
         messages: [{ role: 'user', content: 'coffee' }],
         env: {},
@@ -194,8 +225,11 @@ test('search failure is a 5xx so the homepage can fall back', async () => {
             throw new Error('db down');
         }
     });
-    assert.equal(result.status, 500);
-    assert.equal(result.body.success, false);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.mode, 'search');
+    assert.equal(result.body.reply, EMPTY_LINE);
+    assert.deepEqual(result.body.listings, []);
 });
 
 test('listings are capped at about 8 and the template admits truncation', async () => {
@@ -213,16 +247,16 @@ test('listings are capped at about 8 and the template admits truncation', async 
     assert.equal(result.body.reply, 'Too many matches. Showing a few.');
 });
 
-test('system prompt forbids invented amenities and names the live model', () => {
-    const prompt = buildSystemPrompt({
-        listings: [publicListing(VANMAI_COFFEE)],
-        locale: 'en'
-    });
-    assert.match(prompt, /asian\.directory/);
-    assert.match(prompt, /Never invent/);
-    assert.match(prompt, /wifi/);
-    assert.match(prompt, /Vanmai Coffee Cooperative/);
-    assert.doesNotMatch(prompt, /wifi":/);
+test('system prompt is the locked short text plus LISTINGS JSON', () => {
+    const slim = [listingForModel(VANMAI_COFFEE)];
+    const prompt = buildSystemPrompt({ listings: slim });
+    assert.equal(
+        SYSTEM_PROMPT_TEXT,
+        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise.'
+    );
+    assert.equal(prompt, `${SYSTEM_PROMPT_TEXT}\n${JSON.stringify(slim)}`);
+    assert.doesNotMatch(prompt, /phone|address|business_hours|special_offerings|keywords/);
+    assert.doesNotMatch(JSON.stringify(slim), /wifi":/);
     assert.equal(DEFAULT_XAI_MODEL, 'grok-4.3');
     assert.equal(getChatModel({}), 'grok-4.3');
     assert.equal(getChatApiKey({ XAI_API_KEY: ' a ', GROK_API_KEY: 'b' }), 'a');

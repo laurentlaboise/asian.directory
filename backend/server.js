@@ -1447,7 +1447,13 @@ app.post('/api/chat', async (req, res) => {
         return res.status(result.status).json(result.body);
     } catch (error) {
         console.error('Error in /api/chat:', error && error.message ? error.message : 'unknown');
-        res.status(500).json({ success: false, error: 'Failed to chat' });
+        res.status(200).json({
+            success: true,
+            mode: 'search',
+            reply: 'Nothing in the directory for that. Try a name, or a city + what they do.',
+            listings: [],
+            query: ''
+        });
     }
 });
 

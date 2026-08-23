@@ -578,6 +578,7 @@
             scrollToBottom();
         }
 
+        // Cards come from the listings array only. Reply text is never parsed for names.
         const addAIResponse = (results, meta = {}) => {
             const thinkingIndicator = document.getElementById('thinking-indicator');
             if (thinkingIndicator) thinkingIndicator.remove();
