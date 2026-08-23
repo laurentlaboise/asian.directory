@@ -27,7 +27,8 @@ const {
     tokenize,
     isGreeting,
     isFollowUp,
-    mentionsOutsideCoverage
+    mentionsOutsideCoverage,
+    decodeListingFields
 } = require('./search-query');
 
 const CHAT_LISTING_LIMIT = 8;
@@ -128,7 +129,7 @@ function copyPresentFields(row, keys) {
  * Homepage card row: public search fields only. Never add wifi/hours/reviews.
  */
 function publicListing(row) {
-    return copyPresentFields(row, CARD_LISTING_FIELDS);
+    return copyPresentFields(decodeListingFields(row), CARD_LISTING_FIELDS);
 }
 
 /**

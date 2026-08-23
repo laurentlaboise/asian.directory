@@ -63,6 +63,16 @@ const YUNI_COFFEE = {
 };
 
 test('publicListing copies existing fields only and never invents wifi or hours', () => {
+    const smashed = publicListing({
+        id: 917,
+        name: 'CafÃ© Sinouk',
+        category: 'Manufacture',
+        description: 'CafÃ© in Vientiane',
+        city: 'Vientiane'
+    });
+    assert.equal(smashed.name, 'Café Sinouk');
+    assert.equal(smashed.description, 'Café in Vientiane');
+
     const row = publicListing(VANMAI_COFFEE);
     assert.equal(row.name, 'Vanmai Coffee Cooperative');
     assert.equal(row.city, 'Vientiane');
@@ -451,6 +461,9 @@ test('vague food and need asks clarify before search and skip junk listings', as
     assert.equal(detectClarifyKind('bored'), 'need');
     assert.equal(detectClarifyKind('help'), 'need');
     assert.equal(detectClarifyKind('coffee in Vientiane'), null);
+    assert.equal(detectClarifyKind('food'), 'food');
+    assert.equal(detectClarifyKind('food in Vientiane'), null);
+    assert.equal(shouldClarify("I'm hungry", []), 'food');
     assert.equal(shouldClarify('which is good for working?', ['best coffee places']), null);
 
     const prompts = [
