@@ -12,6 +12,7 @@ const {
     publicListing,
     listingForModel,
     stripSpokenContact,
+    stripUnclaimedRanking,
     normalizeMessages,
     searchQueryFromMessages,
     isAmenityFollowUp,
@@ -19,7 +20,7 @@ const {
     handleChatRequest,
     omitChatReplyFromLog
 } = require('./chat');
-const { GREETING_LINE, EMPTY_LINE } = require('./search-query');
+const { GREETING_LINE, EMPTY_LINE, parseSearchQuery } = require('./search-query');
 const fs = require('fs');
 const path = require('path');
 
@@ -166,6 +167,43 @@ test('no API key returns honest search-mode template and listings', async () => 
     assert.equal(result.body.listings[0].wifi, undefined);
     assert.ok(!JSON.stringify(result.body).includes('xai-'));
     assert.ok(!JSON.stringify(result.body).includes('API_KEY'));
+});
+
+test('best coffee lists matching rows and does not rank', async () => {
+    assert.match(SYSTEM_PROMPT_TEXT, /Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON/);
+    assert.match(SYSTEM_PROMPT_TEXT, /List matches; do not rank/);
+    assert.equal(
+        stripUnclaimedRanking('The best and #1 top-rated verified cafe.', [listingForModel(VANMAI_COFFEE)]),
+        'The and cafe.'
+    );
+    assert.match(
+        stripUnclaimedRanking('A verified stall.', [{ name: 'verified stall', city: 'Vientiane', category: 'Services' }]),
+        /verified/i
+    );
+
+    const listed = await handleChatRequest({
+        messages: [{ role: 'user', content: 'best coffee' }],
+        env: {},
+        searchBusinesses: async (query) => {
+            assert.deepEqual(parseSearchQuery(query).contentTerms, ['coffee']);
+            return [VANMAI_COFFEE, YUNI_COFFEE];
+        }
+    });
+    assert.equal(listed.body.mode, 'search');
+    assert.equal(listed.body.reply, 'Here are coffee spots in Vientiane.');
+    assert.doesNotMatch(listed.body.reply, /\bbest\b|#1|top-rated|\bverified\b/i);
+    assert.equal(listed.body.listings.length, 2);
+
+    const grokTried = await handleChatRequest({
+        messages: [{ role: 'user', content: 'best coffee' }],
+        env: { XAI_API_KEY: 'xai-secret-test-key' },
+        searchBusinesses: async () => [VANMAI_COFFEE, YUNI_COFFEE],
+        completeChat: async () => 'The best #1 top-rated verified pick is Vanmai Coffee Cooperative.'
+    });
+    assert.equal(grokTried.body.mode, 'llm');
+    assert.doesNotMatch(grokTried.body.reply, /\bbest\b|#1|top-rated|\bverified\b/i);
+    assert.match(grokTried.body.reply, /Vanmai Coffee Cooperative/);
+    assert.equal(grokTried.body.listings.length, 2);
 });
 
 test('hello without a key uses the greeting template and does not invent listings', async () => {

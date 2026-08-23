@@ -42,6 +42,12 @@ const AMENITY_QUALITY_CUES = new Set([
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_RE = /(?:\+?\d[\d\s().-]{6,}\d)/g;
+const RANKING_CLAIMS = [
+    { re: /\btop-rated\b/gi, claim: 'top-rated' },
+    { re: /\bverified\b/gi, claim: 'verified' },
+    { re: /#1\b/g, claim: '#1' },
+    { re: /\bbest\b/gi, claim: 'best' }
+];
 
 const CARD_LISTING_FIELDS = [
     'id',
@@ -117,6 +123,29 @@ function stripSpokenContact(text) {
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     return cleaned;
+}
+
+function listingJsonHasClaim(listings, claim) {
+    const blob = JSON.stringify(listings || []).toLowerCase();
+    return blob.includes(String(claim).toLowerCase());
+}
+
+function stripUnclaimedRanking(text, listings) {
+    let out = String(text || '');
+    for (const { re, claim } of RANKING_CLAIMS) {
+        if (!listingJsonHasClaim(listings, claim)) {
+            out = out.replace(re, '');
+        }
+    }
+    return out
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/[ \t]+([,.;:!?])/g, '$1')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function sanitizeSpokenReply(text, listings) {
+    return stripSpokenContact(stripUnclaimedRanking(text, listings));
 }
 
 /**
@@ -325,13 +354,14 @@ async function handleChatRequest({
     const safeLocale = normalizeLocale(locale);
 
     const respond = (mode, reply) => {
+        const spoken = sanitizeSpokenReply(reply, modelListings);
         logChatResult({ mode, query, n: listings.length });
         return {
             status: 200,
             body: {
                 success: true,
                 mode,
-                reply,
+                reply: spoken,
                 listings,
                 chips: template.chips,
                 query
@@ -342,7 +372,7 @@ async function handleChatRequest({
     const latest = latestUserText(normalized.messages);
     const apiKey = getChatApiKey(env);
     if (!apiKey || isAmenityFollowUp(latest)) {
-        return respond('search', stripSpokenContact(template.reply));
+        return respond('search', template.reply);
     }
 
     try {
@@ -354,7 +384,7 @@ async function handleChatRequest({
             apiKey,
             model: getChatModel(env)
         });
-        const text = stripSpokenContact(String(reply || '').trim());
+        const text = String(reply || '').trim();
         if (!text) throw new Error('empty reply');
         return respond('llm', text);
     } catch (err) {
@@ -375,6 +405,8 @@ module.exports = {
     publicListing,
     listingForModel,
     stripSpokenContact,
+    stripUnclaimedRanking,
+    sanitizeSpokenReply,
     logChatResult,
     omitChatReplyFromLog,
     normalizeMessages,
