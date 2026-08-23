@@ -38,7 +38,8 @@ const STOPWORDS = new Set([
     'business', 'businesses',
     // Amenity / quality follow-ups. They refine a prior city+category; they are
     // not listing text and must not AND into SQL (wifi/working would zero the set).
-    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
+    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
+    'reviews', 'review', 'laptop', 'laptops'
 ]);
 
 const GREETINGS = new Set(['hello', 'hi', 'hey']);
@@ -46,7 +47,8 @@ const GREETINGS = new Set(['hello', 'hi', 'hey']);
 const FOLLOW_UP_CUES = new Set([
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
-    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
+    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
+    'reviews', 'review', 'laptop', 'laptops'
 ]);
 
 // Tokens that match almost the entire LA catalog via description/address text.
@@ -262,6 +264,7 @@ function mentionsOutsideCoverage(query) {
 
 function isFollowUp(query) {
     if (isGreeting(query)) return false;
+    if (/\bgood\s+for\b/i.test(String(query || ''))) return true;
     const tokens = tokenize(query);
     if (!tokens.length) return false;
     if (tokens.some((token) => FOLLOW_UP_CUES.has(token))) return true;

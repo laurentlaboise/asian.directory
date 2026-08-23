@@ -6,7 +6,6 @@ const {
     CHAT_LISTING_LIMIT,
     DEFAULT_XAI_MODEL,
     SYSTEM_PROMPT_TEXT,
-    MODEL_DESC_MAX,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
@@ -15,6 +14,7 @@ const {
     stripSpokenContact,
     normalizeMessages,
     searchQueryFromMessages,
+    isAmenityFollowUp,
     buildSystemPrompt,
     handleChatRequest,
     omitChatReplyFromLog
@@ -78,36 +78,25 @@ test('publicListing copies existing fields only and never invents wifi or hours'
     assert.equal(withHours.wifi, undefined);
 });
 
-test('listingForModel is a slim 200-char snippet without phone or address', () => {
-    const long = `${'Coffee roasted in Vientiane. '.repeat(20)}Extra.`;
+test('listingForModel is name, city, category, website only', () => {
     const slim = listingForModel({
         ...YUNI_COFFEE,
-        description: long,
+        description: `${'Coffee roasted in Vientiane. '.repeat(20)}Extra.`,
         business_hours: { mon: '8-17' },
         special_offerings: ['beans'],
-        keywords: ['coffee']
+        keywords: ['coffee'],
+        email: 'sales@yunicoffeeco.com'
     });
-    assert.deepEqual(Object.keys(slim).sort(), ['category', 'city', 'country', 'description', 'name', 'website']);
-    assert.equal(slim.description.length, MODEL_DESC_MAX);
+    assert.deepEqual(Object.keys(slim).sort(), ['category', 'city', 'name', 'website']);
+    assert.equal(slim.description, undefined);
+    assert.equal(slim.country, undefined);
     assert.equal(slim.phone, undefined);
     assert.equal(slim.address, undefined);
     assert.equal(slim.business_hours, undefined);
     assert.equal(slim.special_offerings, undefined);
     assert.equal(slim.keywords, undefined);
     assert.equal(slim.id, undefined);
-    assert.equal(slim.wifi, undefined);
-
-    const withContact = listingForModel({
-        ...YUNI_COFFEE,
-        email: 'sales@yunicoffeeco.com',
-        phone: '+856 20 5551234',
-        description: 'Contact email: sales@yunicoffeeco.com or call +856 20 5551234.'
-    });
-    assert.equal(withContact.phone, undefined);
-    assert.equal(withContact.email, undefined);
-    assert.doesNotMatch(withContact.description || '', /@/);
-    assert.doesNotMatch(withContact.description || '', /\+856/);
-    assert.doesNotMatch(JSON.stringify(withContact), /sales@yunicoffeeco\.com|\+856 20 5551234/);
+    assert.doesNotMatch(JSON.stringify(slim), /sales@yunicoffeeco\.com|\+856|description/);
 });
 
 test('spoken reply never includes phone or email', () => {
@@ -195,38 +184,67 @@ test('hello without a key uses the greeting template and does not invent listing
 
 test('with a key, Grok reply is used and the key is never returned', async () => {
     const result = await handleChatRequest({
-        messages: [
-            { role: 'user', content: 'best coffee places' },
-            { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
-            { role: 'user', content: 'which is good for working?' }
-        ],
+        messages: [{ role: 'user', content: 'coffee in Vientiane' }],
         locale: 'en',
         env: { XAI_API_KEY: 'xai-secret-test-key' },
         searchBusinesses: async (query) => {
-            assert.match(query, /coffee/);
+            assert.match(query, /coffee/i);
             return [VANMAI_COFFEE, YUNI_COFFEE];
         },
         completeChat: async ({ listings, apiKey }) => {
             assert.equal(apiKey, 'xai-secret-test-key');
             assert.equal(listings.length, 2);
-            assert.ok(listings.every((row) => row.wifi === undefined));
+            assert.ok(listings.every((row) => !('description' in row)));
             assert.ok(listings.every((row) => row.phone === undefined));
             assert.ok(listings.every((row) => row.address === undefined));
-            assert.ok(listings.every((row) => row.business_hours === undefined));
-            assert.ok(listings.every((row) => !('keywords' in row)));
-            return 'Call +856 20 5551234 or sales@yunicoffeeco.com. I do not have wifi or workspace notes on these rows. Vanmai Coffee Cooperative, Vientiane.';
+            assert.deepEqual(Object.keys(listings[1]).sort(), ['category', 'city', 'name', 'website']);
+            return 'Call +856 20 5551234 or sales@yunicoffeeco.com. Coffee listings in Vientiane: Vanmai Coffee Cooperative.';
         }
     });
 
     assert.equal(result.status, 200);
     assert.equal(result.body.mode, 'llm');
-    assert.match(result.body.reply, /I do not have wifi/);
+    assert.match(result.body.reply, /Vanmai Coffee Cooperative/);
     assert.doesNotMatch(result.body.reply, /@|\+856|5551234/);
-    assert.ok(!JSON.stringify(result.body.reply).includes('sales@yunicoffeeco.com'));
     assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
     assert.equal(result.body.listings.length, 2);
     assert.equal(result.body.listings[1].phone, '+856 20 0000');
     assert.equal(result.body.listings[1].address, 'Vientiane, Laos');
+});
+
+test('amenity follow-ups stay search mode even when XAI_API_KEY is set', async () => {
+    const prompts = [
+        'which is good for working?',
+        'do they have wifi?',
+        'what are the hours?',
+        'any reviews?',
+        'good for laptop?'
+    ];
+    for (const latest of prompts) {
+        let called = false;
+        const result = await handleChatRequest({
+            messages: [
+                { role: 'user', content: 'best coffee places' },
+                { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+                { role: 'user', content: latest }
+            ],
+            env: { XAI_API_KEY: 'xai-secret-test-key' },
+            searchBusinesses: async (query) => {
+                assert.match(query, /coffee/);
+                return [VANMAI_COFFEE, YUNI_COFFEE];
+            },
+            completeChat: async () => {
+                called = true;
+                return 'should not be used';
+            }
+        });
+        assert.equal(isAmenityFollowUp(latest), true, latest);
+        assert.equal(called, false, latest);
+        assert.equal(result.body.mode, 'search', latest);
+        assert.equal(result.body.listings.length, 2, latest);
+        assert.doesNotMatch(result.body.reply, /@|\+856/);
+        assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
+    }
 });
 
 test('provider failure falls back to search mode instead of leaking the key', async () => {
@@ -278,12 +296,13 @@ test('system prompt is the locked short text plus LISTINGS JSON', () => {
     const prompt = buildSystemPrompt({ listings: slim });
     assert.equal(
         SYSTEM_PROMPT_TEXT,
-        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices.'
+        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank.'
     );
     assert.equal(prompt, `${SYSTEM_PROMPT_TEXT}\n${JSON.stringify(slim)}`);
     assert.match(SYSTEM_PROMPT_TEXT, /Do not read out phone numbers or email addresses/);
     assert.match(SYSTEM_PROMPT_TEXT, /Do not mention prices/);
-    assert.doesNotMatch(JSON.stringify(slim), /"phone"|"email"|business_hours|special_offerings|keywords/);
+    assert.match(SYSTEM_PROMPT_TEXT, /do not rank/i);
+    assert.doesNotMatch(JSON.stringify(slim), /"phone"|"email"|business_hours|special_offerings|keywords|"description"/);
     assert.doesNotMatch(JSON.stringify(slim), /wifi":/);
     assert.equal(DEFAULT_XAI_MODEL, 'grok-4.3');
     assert.equal(getChatModel({}), 'grok-4.3');
@@ -330,6 +349,8 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
     );
     assert.doesNotMatch(logFn, /reply:/);
     assert.match(logFn, /delete copy\.reply/);
+    assert.match(indexSrc, /querySelectorAll\('\.follow-up-chips'\)/);
+    assert.match(indexSrc, /class="follow-up-chips/);
 
     const listingsDir = path.join(__dirname, '..', 'listings');
     for (const file of fs.readdirSync(listingsDir)) {

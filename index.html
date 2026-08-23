@@ -236,13 +236,15 @@
             'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
             'else', 'instead', 'again', 'nearby', 'also', 'any',
             'business', 'businesses',
-            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
+            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
+            'reviews', 'review', 'laptop', 'laptops'
         ]);
         const CHAT_GREETINGS = new Set(['hello', 'hi', 'hey']);
         const CHAT_FOLLOW_UP_CUES = new Set([
             'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
             'else', 'instead', 'again', 'nearby', 'also', 'any',
-            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
+            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
+            'reviews', 'review', 'laptop', 'laptops'
         ]);
         const CHAT_COUNTRY_GENERICS = new Set(['laos', 'lao', 'pdr']);
         const CHAT_LOCATION_HINTS = new Set([
@@ -582,6 +584,7 @@
         const addAIResponse = (results, meta = {}) => {
             const thinkingIndicator = document.getElementById('thinking-indicator');
             if (thinkingIndicator) thinkingIndicator.remove();
+            chatContainer.querySelectorAll('.follow-up-chips').forEach((bar) => bar.remove());
 
             const list = Array.isArray(results) ? results : [];
             const truncated = list.length > CHAT_CARD_LIMIT;
@@ -601,7 +604,7 @@
                 ? meta.chips.slice(0, 3)
                 : buildFollowUpChips(terms, shown);
             const chipsHtml = chips.length
-                ? `<div class="mt-4 flex flex-wrap gap-2">${chips.map((chip) => (
+                ? `<div class="follow-up-chips mt-4 flex flex-wrap gap-2">${chips.map((chip) => (
                     `<button type="button" class="follow-up-chip px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 hover:bg-yellow-400 hover:text-gray-900 hover:border-yellow-400 transition-colors" data-chip="${escapeHtml(chip)}">${escapeHtml(chip)}</button>`
                 )).join('')}</div>`
                 : '';

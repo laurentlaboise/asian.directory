@@ -21,7 +21,8 @@ const {
     reformulateWithHistory,
     parseSearchQuery,
     buildAssistantLine,
-    buildFollowUpChips
+    buildFollowUpChips,
+    tokenize
 } = require('./search-query');
 
 const CHAT_LISTING_LIMIT = 8;
@@ -33,8 +34,11 @@ const XAI_TIMEOUT_MS = 20000;
 const DEFAULT_XAI_MODEL = 'grok-4.3';
 
 const ALLOWED_ROLES = new Set(['user', 'assistant']);
-const MODEL_DESC_MAX = 200;
-const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices.';
+const SYSTEM_PROMPT_TEXT = 'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank.';
+
+const AMENITY_QUALITY_CUES = new Set([
+    'wifi', 'hours', 'reviews', 'review', 'working', 'work', 'laptop', 'laptops'
+]);
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_RE = /(?:\+?\d[\d\s().-]{6,}\d)/g;
@@ -54,9 +58,8 @@ const CARD_LISTING_FIELDS = [
 
 const MODEL_LISTING_FIELDS = [
     'name',
-    'category',
     'city',
-    'country',
+    'category',
     'website'
 ];
 
@@ -117,8 +120,8 @@ function stripSpokenContact(text) {
 }
 
 /**
- * Slim row for the model only. Description is a 200-char snippet.
- * No phone, address, hours, offerings, keywords, or contact strings.
+ * Slim row for the model only: name, city, category, website.
+ * No phone, email, address, hours, keywords, offerings, or description.
  */
 function listingForModel(row) {
     const out = copyPresentFields(row, MODEL_LISTING_FIELDS);
@@ -126,13 +129,19 @@ function listingForModel(row) {
     delete out.phone;
     delete out.email;
     delete out.alt_phone;
-    if (presentValue(row.description)) {
-        const text = stripSpokenContact(String(row.description).trim());
-        if (text) {
-            out.description = text.length > MODEL_DESC_MAX ? text.slice(0, MODEL_DESC_MAX) : text;
-        }
-    }
+    delete out.address;
+    delete out.description;
+    delete out.keywords;
+    delete out.special_offerings;
+    delete out.business_hours;
+    delete out.country;
     return out;
+}
+
+function isAmenityFollowUp(query) {
+    const text = String(query || '');
+    if (/\bgood\s+for\b/i.test(text)) return true;
+    return tokenize(text).some((token) => AMENITY_QUALITY_CUES.has(token));
 }
 
 function logChatResult({ mode, query, n }) {
@@ -330,9 +339,10 @@ async function handleChatRequest({
         };
     };
 
+    const latest = latestUserText(normalized.messages);
     const apiKey = getChatApiKey(env);
-    if (!apiKey) {
-        return respond('search', template.reply);
+    if (!apiKey || isAmenityFollowUp(latest)) {
+        return respond('search', stripSpokenContact(template.reply));
     }
 
     try {
@@ -358,7 +368,7 @@ module.exports = {
     CHAT_HISTORY_LIMIT,
     DEFAULT_XAI_MODEL,
     SYSTEM_PROMPT_TEXT,
-    MODEL_DESC_MAX,
+    AMENITY_QUALITY_CUES,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
@@ -371,6 +381,7 @@ module.exports = {
     userTurns,
     latestUserText,
     searchQueryFromMessages,
+    isAmenityFollowUp,
     buildSystemPrompt,
     completeWithXai,
     handleChatRequest

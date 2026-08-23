@@ -220,6 +220,8 @@ test('follow-ups append previous city and category words', () => {
     assert.equal(isFollowUp('In Vientiane?'), true);
     assert.equal(isFollowUp('which is good for working?'), true);
     assert.equal(isFollowUp('do they have wifi?'), true);
+    assert.equal(isFollowUp('any reviews?'), true);
+    assert.equal(isFollowUp('good for laptop?'), true);
     assert.equal(isFollowUp('in Vientiane only'), true);
     assert.equal(isFollowUp('best coffee places'), false);
     assert.equal(isFollowUp('hello'), false);
