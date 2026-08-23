@@ -16,11 +16,19 @@ const {
     normalizeMessages,
     searchQueryFromMessages,
     isAmenityFollowUp,
+    detectClarifyKind,
+    shouldClarify,
     buildSystemPrompt,
     handleChatRequest,
-    omitChatReplyFromLog
+    completeWithXai,
+    omitChatReplyFromLog,
+    GREETING_REPLY,
+    FOOD_CLARIFY_REPLY,
+    NEED_CLARIFY_REPLY,
+    MISSING_AMENITY_REPLY,
+    OUTSIDE_COVERAGE_REPLY
 } = require('./chat');
-const { GREETING_LINE, EMPTY_LINE, parseSearchQuery } = require('./search-query');
+const { EMPTY_LINE, parseSearchQuery } = require('./search-query');
 const fs = require('fs');
 const path = require('path');
 
@@ -170,6 +178,7 @@ test('no API key returns honest search-mode template and listings', async () => 
 });
 
 test('best coffee lists matching rows and does not rank', async () => {
+    assert.match(SYSTEM_PROMPT_TEXT, /You are asian\.directory's conversational assistant/);
     assert.match(SYSTEM_PROMPT_TEXT, /Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON/);
     assert.match(SYSTEM_PROMPT_TEXT, /List matches; do not rank/);
     assert.equal(
@@ -206,18 +215,23 @@ test('best coffee lists matching rows and does not rank', async () => {
     assert.equal(grokTried.body.listings.length, 2);
 });
 
-test('hello without a key uses the greeting template and does not invent listings', async () => {
+test('hello clarifies before search and does not invent listings', async () => {
+    let searched = false;
     const result = await handleChatRequest({
         messages: [{ role: 'user', content: 'hello' }],
-        env: {},
-        searchBusinesses: async (query) => {
-            assert.equal(query, 'hello');
-            return [];
-        }
+        env: { XAI_API_KEY: 'xai-secret-test-key' },
+        searchBusinesses: async () => {
+            searched = true;
+            return [VANMAI_COFFEE];
+        },
+        completeChat: async () => 'should not be used'
     });
-    assert.equal(result.body.mode, 'search');
-    assert.equal(result.body.reply, GREETING_LINE);
+    assert.equal(searched, false);
+    assert.equal(result.body.mode, 'clarify');
+    assert.equal(result.body.reply, GREETING_REPLY);
     assert.deepEqual(result.body.listings, []);
+    assert.ok(result.body.chips.includes('Vientiane?'));
+    assert.doesNotMatch(result.body.reply, /[\u{1F300}-\u{1FAFF}]/u);
 });
 
 test('with a key, Grok reply is used and the key is never returned', async () => {
@@ -279,7 +293,9 @@ test('amenity follow-ups stay search mode even when XAI_API_KEY is set', async (
         assert.equal(isAmenityFollowUp(latest), true, latest);
         assert.equal(called, false, latest);
         assert.equal(result.body.mode, 'search', latest);
+        assert.equal(result.body.reply, MISSING_AMENITY_REPLY, latest);
         assert.equal(result.body.listings.length, 2, latest);
+        assert.doesNotMatch(result.body.reply, /wifi|laptop-friendly|quieter/i);
         assert.doesNotMatch(result.body.reply, /@|\+856/);
         assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
     }
@@ -334,12 +350,15 @@ test('system prompt is the locked short text plus LISTINGS JSON', () => {
     const prompt = buildSystemPrompt({ listings: slim });
     assert.equal(
         SYSTEM_PROMPT_TEXT,
-        'You are a helpful local-business assistant for asian.directory. Reply in 1–3 short sentences using ONLY the listing data provided below. Never invent businesses, amenities, hours, wifi, reviews, prices, or any other detail. If the user asks about something that is not present in the data, say we do not have that information. Be natural and concise. Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank.'
+        'You are asian.directory\'s conversational assistant for a SEA business directory (strongest in Laos: Vientiane, Luang Prabang; expanding Thailand, Vietnam, Cambodia). Warm, lightly local, polite, never pushy. Reply in 1–3 short sentences. No emojis unless the user used one. No hype (amazing, must-try, best in the world). Help people find real catalog businesses. Never invent listings, amenities, reviews, prices, hours, wifi, contact, or features. Use ONLY the listing JSON below (name, city, category, website). Do not read out phone numbers or email addresses. If asked for contact, say the listing card has the public details we have, and do not invent a number. Do not mention prices. If vague (e.g. "I\'m hungry", "what should I eat?") ask 1–2 clarifying questions (cuisine and city). Do not invent places. Hello: short welcome, ask eat/drink/stay/other + city. After search: one natural sentence reflecting intent; cards stay the star. Missing amenity: say "I don’t have that information for these places yet." Do not infer quieter or laptop-friendly from descriptions. Do not say best, #1, top-rated, or verified unless that exact claim is in the listing JSON. List matches; do not rank. Stay on directory purpose; politely decline unrelated asks. If they ask Tokyo/Seoul etc., say strongest coverage is SEA/Laos.'
     );
     assert.equal(prompt, `${SYSTEM_PROMPT_TEXT}\n${JSON.stringify(slim)}`);
     assert.match(SYSTEM_PROMPT_TEXT, /Do not read out phone numbers or email addresses/);
     assert.match(SYSTEM_PROMPT_TEXT, /Do not mention prices/);
     assert.match(SYSTEM_PROMPT_TEXT, /do not rank/i);
+    assert.match(SYSTEM_PROMPT_TEXT, /name, city, category, website/);
+    assert.match(SYSTEM_PROMPT_TEXT, /strongest coverage is SEA\/Laos/);
+    assert.match(SYSTEM_PROMPT_TEXT, /I don’t have that information for these places yet/);
     assert.doesNotMatch(JSON.stringify(slim), /"phone"|"email"|business_hours|special_offerings|keywords|"description"/);
     assert.doesNotMatch(JSON.stringify(slim), /wifi":/);
     assert.equal(DEFAULT_XAI_MODEL, 'grok-4.3');
@@ -391,6 +410,9 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
     assert.match(indexSrc, /querySelectorAll\('\.follow-up-chips'\)/);
     assert.match(indexSrc, /querySelectorAll\('\.follow-up-chip'\)/);
     assert.match(indexSrc, /class="follow-up-chips/);
+    assert.match(indexSrc, /const isVaguePrompt/);
+    assert.match(indexSrc, /Welcome\. Looking to eat, drink, stay/);
+    assert.match(chatSrc, /reasoning_effort:\s*'none'/);
 
     const listingsDir = path.join(__dirname, '..', 'listings');
     for (const file of fs.readdirSync(listingsDir)) {
@@ -420,4 +442,109 @@ test('Jordan visual lock: chips only under the latest assistant reply', () => {
         indexSrc.indexOf('id="submit-modal"')
     );
     assert.doesNotMatch(inputBlock, /follow-up-chips|follow-up-chip/);
+});
+
+test('vague food and need asks clarify before search and skip junk listings', async () => {
+    assert.equal(detectClarifyKind('hello'), 'greeting');
+    assert.equal(detectClarifyKind("I'm hungry"), 'food');
+    assert.equal(detectClarifyKind('what should I eat?'), 'food');
+    assert.equal(detectClarifyKind('bored'), 'need');
+    assert.equal(detectClarifyKind('help'), 'need');
+    assert.equal(detectClarifyKind('coffee in Vientiane'), null);
+    assert.equal(shouldClarify('which is good for working?', ['best coffee places']), null);
+
+    const prompts = [
+        { text: "I'm hungry", reply: FOOD_CLARIFY_REPLY },
+        { text: 'what should I eat?', reply: FOOD_CLARIFY_REPLY },
+        { text: 'bored', reply: NEED_CLARIFY_REPLY },
+        { text: 'help', reply: NEED_CLARIFY_REPLY }
+    ];
+
+    for (const { text, reply } of prompts) {
+        let searched = false;
+        let called = false;
+        const result = await handleChatRequest({
+            messages: [{ role: 'user', content: text }],
+            env: { XAI_API_KEY: 'xai-secret-test-key' },
+            searchBusinesses: async () => {
+                searched = true;
+                return [VANMAI_COFFEE, YUNI_COFFEE];
+            },
+            completeChat: async () => {
+                called = true;
+                return 'should not be used';
+            }
+        });
+        assert.equal(searched, false, text);
+        assert.equal(called, false, text);
+        assert.equal(result.status, 200, text);
+        assert.equal(result.body.mode, 'clarify', text);
+        assert.equal(result.body.reply, reply, text);
+        assert.deepEqual(result.body.listings, [], text);
+        assert.ok(result.body.chips.length > 0, text);
+        assert.ok(result.body.chips.some((chip) => /Vientiane|Sushi|Coffee|Hotels/i.test(chip)), text);
+        assert.doesNotMatch(result.body.reply, /amazing|must-try|best in the world/i);
+        assert.doesNotMatch(JSON.stringify(result.body), /xai-secret-test-key/);
+    }
+});
+
+test('after a vague ask, sushi in Vientiane runs the existing planner', async () => {
+    const SUSHI = {
+        id: 1801,
+        name: 'Khao Niew Sushi',
+        category: 'Restaurant',
+        city: 'Vientiane',
+        website: 'https://example.com/sushi'
+    };
+    let searchedQuery = '';
+    const result = await handleChatRequest({
+        messages: [
+            { role: 'user', content: "I'm hungry" },
+            { role: 'assistant', content: FOOD_CLARIFY_REPLY },
+            { role: 'user', content: 'sushi in Vientiane' }
+        ],
+        env: {},
+        searchBusinesses: async (query) => {
+            searchedQuery = query;
+            return [SUSHI];
+        }
+    });
+    assert.match(searchedQuery, /sushi/i);
+    assert.match(searchedQuery, /vientiane/i);
+    assert.equal(result.body.mode, 'search');
+    assert.equal(result.body.listings.length, 1);
+    assert.equal(result.body.listings[0].name, 'Khao Niew Sushi');
+    assert.match(result.body.reply, /sushi|Vientiane/i);
+    assert.doesNotMatch(result.body.reply, /hungry/i);
+});
+
+test('xAI request stays grok-4.3 with reasoning_effort none', async () => {
+    let body;
+    await completeWithXai({
+        messages: [{ role: 'user', content: 'coffee in Vientiane' }],
+        listings: [listingForModel(YUNI_COFFEE)],
+        apiKey: 'xai-test',
+        model: DEFAULT_XAI_MODEL,
+        requestFn: async (args) => {
+            body = args.body;
+            return 'Coffee listings in Vientiane.';
+        }
+    });
+    assert.equal(body.model, 'grok-4.3');
+    assert.equal(body.reasoning_effort, 'none');
+    assert.match(body.messages[0].content, /asian\.directory/);
+    assert.doesNotMatch(JSON.stringify(body), /"phone"|"email"/);
+});
+
+test('Tokyo and Seoul asks stay honest about SEA/Laos coverage', async () => {
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: 'ramen in Tokyo' }],
+        env: { XAI_API_KEY: 'xai-secret-test-key' },
+        searchBusinesses: async () => [],
+        completeChat: async () => 'Try Ichiran in Shibuya.'
+    });
+    assert.equal(result.body.mode, 'search');
+    assert.equal(result.body.reply, OUTSIDE_COVERAGE_REPLY);
+    assert.deepEqual(result.body.listings, []);
+    assert.doesNotMatch(result.body.reply, /Ichiran|Shibuya/);
 });

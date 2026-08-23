@@ -242,7 +242,8 @@
             'else', 'instead', 'again', 'nearby', 'also', 'any',
             'business', 'businesses',
             'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
-            'reviews', 'review', 'laptop', 'laptops'
+            'reviews', 'review', 'laptop', 'laptops',
+            'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help'
         ]);
         const CHAT_GREETINGS = new Set(['hello', 'hi', 'hey']);
         const CHAT_FOLLOW_UP_CUES = new Set([
@@ -302,6 +303,27 @@
             if (!tokens.length) return false;
             const meaningful = tokens.filter((token) => !CHAT_STOPWORDS.has(token) || CHAT_GREETINGS.has(token));
             return meaningful.length > 0 && meaningful.every((token) => CHAT_GREETINGS.has(token));
+        };
+
+        const isVaguePrompt = (prompt) => {
+            const text = String(prompt || '').trim().toLowerCase();
+            if (
+                /\bwhat should i eat\b/.test(text)
+                || /\bwhat to eat\b/.test(text)
+                || /\b(i['’]?m|i am)\s+hungry\b/.test(text)
+                || /^(please\s+)?help(\s+me)?[.!?]*$/.test(text)
+            ) {
+                return true;
+            }
+            const tokens = chatTokens(text);
+            const leftover = tokens.filter((token) => (
+                !CHAT_STOPWORDS.has(token)
+                && !CHAT_GREETINGS.has(token)
+                && token.length > 2
+            ));
+            const vague = new Set(['hungry', 'eat', 'food', 'bored', 'help']);
+            if (leftover.length && leftover.every((token) => vague.has(token))) return true;
+            return !leftover.length && tokens.some((token) => vague.has(token));
         };
 
         const isFollowUpPrompt = (prompt) => {
@@ -408,7 +430,13 @@
 
         const buildAssistantLine = ({ prompt, terms, results, truncated, retried, emptyReason }) => {
             if (emptyReason === 'greeting' || isGreetingPrompt(prompt)) {
-                return "That's not a listing. Try a business name, or a city + what they do.";
+                return 'Welcome. Looking to eat, drink, stay, or something else — and in which city?';
+            }
+            if (emptyReason === 'vague' || isVaguePrompt(prompt)) {
+                if (/\bhungry\b|\beat\b|\bfood\b/.test(String(prompt || '').toLowerCase())) {
+                    return 'What kind of food, and in which city?';
+                }
+                return 'What are you looking for, and in which city?';
             }
             const list = results || [];
             if (!list.length) {
@@ -726,7 +754,21 @@
             const metaBase = { prompt: searchQuery, terms };
 
             if (isGreetingPrompt(prompt) || isGreetingPrompt(searchQuery)) {
-                addAIResponse([], { ...metaBase, emptyReason: 'greeting' });
+                addAIResponse([], {
+                    ...metaBase,
+                    emptyReason: 'greeting',
+                    chips: ['Eat?', 'Coffee?', 'Vientiane?']
+                });
+                enableButtons();
+                return;
+            }
+
+            if (isVaguePrompt(prompt) || isVaguePrompt(searchQuery)) {
+                addAIResponse([], {
+                    ...metaBase,
+                    emptyReason: 'vague',
+                    chips: ['Sushi?', 'Coffee?', 'Vientiane?']
+                });
                 enableButtons();
                 return;
             }
