@@ -227,11 +227,22 @@ test('best coffee lists matching rows and does not rank', async () => {
 
 test('hello clarifies before search and does not invent listings', async () => {
     const probed = [];
+    const hotel = {
+        id: 486,
+        name: 'Salana Boutique Hotel',
+        category: 'tourism',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
     const result = await handleChatRequest({
         messages: [{ role: 'user', content: 'hello' }],
         env: { XAI_API_KEY: 'xai-secret-test-key' },
         searchBusinesses: async (query) => {
             probed.push(query);
+            if (/sushi/i.test(query)) return [];
+            if (/hotel/i.test(query)) return [hotel];
+            if (/lawyer|legal/i.test(query)) return [];
             return [VANMAI_COFFEE];
         },
         completeChat: async () => 'should not be used'
@@ -240,7 +251,7 @@ test('hello clarifies before search and does not invent listings', async () => {
     assert.equal(result.body.mode, 'clarify');
     assert.equal(result.body.reply, GREETING_REPLY);
     assert.deepEqual(result.body.listings, []);
-    assert.ok(result.body.chips.includes('Vientiane?'));
+    assert.ok(result.body.chips.some((chip) => /Hotels|Travel|Lawyers|Banks/i.test(chip)));
     assert.ok(!result.body.chips.some((chip) => /sushi/i.test(chip)));
     assert.doesNotMatch(result.body.reply, /[\u{1F300}-\u{1FAFF}]/u);
 });
@@ -424,6 +435,9 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
     assert.match(indexSrc, /const isVaguePrompt/);
     assert.match(indexSrc, /Welcome\. Looking to eat, drink, stay/);
     assert.doesNotMatch(indexSrc, /chips:\s*\[[^\]]*Sushi\?/);
+    assert.match(indexSrc, /\? \['Coffee\?', 'Restaurants\?', 'Vientiane\?'\]/);
+    assert.match(chatSrc, /food:\s*\['Coffee\?', 'Restaurants\?', 'Vientiane\?'\]/);
+    assert.doesNotMatch(chatSrc, /food:\s*\[[^\]]*Hotels\?/);
     assert.match(chatSrc, /reasoning_effort:\s*'none'/);
 
     const listingsDir = path.join(__dirname, '..', 'listings');
@@ -498,7 +512,12 @@ test('vague food and need asks clarify before search and skip junk listings', as
         assert.equal(result.body.reply, reply, text);
         assert.deepEqual(result.body.listings, [], text);
         assert.ok(result.body.chips.length > 0, text);
-        assert.ok(result.body.chips.some((chip) => /Vientiane|Coffee|Hotels|Lawyers|Restaurants|Banks|Travel/i.test(chip)), text);
+        if (/hungry|eat|food/i.test(text)) {
+            assert.ok(result.body.chips.some((chip) => /Coffee|Restaurants|Lao food|Vientiane/i.test(chip)), text);
+            assert.ok(!result.body.chips.some((chip) => /Hotels|Travel|Lawyers|Banks|Construction/i.test(chip)), text);
+        } else {
+            assert.ok(result.body.chips.some((chip) => /Vientiane|Coffee|Hotels|Lawyers|Restaurants|Banks|Travel/i.test(chip)), text);
+        }
         assert.ok(!result.body.chips.some((chip) => /sushi/i.test(chip)), text);
         assert.doesNotMatch(result.body.reply, /amazing|must-try|best in the world/i);
         assert.doesNotMatch(JSON.stringify(result.body), /xai-secret-test-key/);

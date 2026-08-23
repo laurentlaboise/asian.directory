@@ -767,10 +767,15 @@
             }
 
             if (isVaguePrompt(prompt) || isVaguePrompt(searchQuery)) {
+                const foodIntent = /\bhungry\b|\beat\b|\bfood\b/.test(
+                    `${prompt || ''} ${searchQuery || ''}`.toLowerCase()
+                );
                 addAIResponse([], {
                     ...metaBase,
                     emptyReason: 'vague',
-                    chips: ['Coffee?', 'Hotels?', 'Vientiane?']
+                    chips: foodIntent
+                        ? ['Coffee?', 'Restaurants?', 'Vientiane?']
+                        : ['Coffee?', 'Hotels?', 'Vientiane?']
                 });
                 enableButtons();
                 return;
