@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /listings/
+Allow: /
+
+Sitemap: https://asian.directory/sitemap.xml
