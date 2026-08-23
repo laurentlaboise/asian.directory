@@ -109,6 +109,12 @@ test('location-only country words do not produce a catalog-dump query', () => {
     const { sql, params } = buildContentSearchSql(parseSearchQuery('laos'), 'pg');
     assert.equal(sql, null);
     assert.deepEqual(params, []);
+
+    assert.equal(parseSearchQuery('Vientiane').isLocationOnly, true);
+    assert.equal(parseSearchQuery('In Tokyo?').isLocationOnly, true);
+    const cityOnly = buildContentSearchSql(parseSearchQuery('In Vientiane?'), 'pg');
+    assert.equal(cityOnly.sql, null);
+    assert.deepEqual(parseSearchQuery('coffee in Vientiane').contentTerms, ['coffee', 'vientiane']);
 });
 
 test('ANZ bank Laos ranks the live ANZ Lao Branch first', () => {

@@ -696,7 +696,8 @@
                 return;
             }
 
-            if (terms.length === 0) {
+            const locationOnly = terms.length > 0 && terms.every((term) => CHAT_LOCATION_HINTS.has(term));
+            if (terms.length === 0 || locationOnly) {
                 addAIResponse([], { ...metaBase, emptyReason: 'none' });
                 enableButtons();
                 return;

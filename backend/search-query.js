@@ -213,6 +213,28 @@ function parseSearchQuery(query) {
         }
     }
 
+    // City-only leftovers ("Vientiane", "In Tokyo?") are location, not a catalog dump.
+    // Category + city ("coffee in Vientiane") still ANDs both content terms.
+    const onlyLocationHints = contentTerms.length > 0 && contentTerms.every((term) => LOCATION_HINTS.has(term));
+    if (onlyLocationHints) {
+        for (const term of contentTerms) {
+            if (!seenLocation.has(term)) {
+                seenLocation.add(term);
+                locationTerms.push({
+                    token: term,
+                    aliases: COUNTRY_GENERICS[term]?.aliases || [term],
+                    iso: COUNTRY_GENERICS[term]?.iso || ''
+                });
+            }
+        }
+        return {
+            contentTerms: [],
+            locationTerms,
+            isEmpty: true,
+            isLocationOnly: true
+        };
+    }
+
     return {
         contentTerms,
         locationTerms,
@@ -335,7 +357,11 @@ function scoreBusiness(business, parsed) {
     }
 
     for (const loc of parsed.locationTerms) {
-        const aliases = new Set([loc.iso.toLowerCase(), ...loc.aliases, loc.token]);
+        const aliases = new Set([
+            ...(loc.iso ? [loc.iso.toLowerCase()] : []),
+            ...(loc.aliases || []),
+            loc.token
+        ]);
         if (aliases.has(country)) score += 20;
         if (city.includes(loc.token)) score += 8;
     }
