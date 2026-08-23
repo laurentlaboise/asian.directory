@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const { parseSearchQuery, buildContentSearchSql, rankBusinesses, nextRetryQuery, decodeMojibake } = require('./search-query');
+const { attachTaxonomy } = require('./categories');
 
 // ---------------------------------------------------------------------------
 // PostgreSQL connection pool
@@ -461,7 +462,7 @@ async function seedData() {
 // ---------------------------------------------------------------------------
 function parseBusiness(business) {
     if (!business) return null;
-    return {
+    return attachTaxonomy({
         ...business,
         name: decodeMojibake(business.name),
         category: decodeMojibake(business.category),
@@ -473,7 +474,7 @@ function parseBusiness(business) {
         business_hours: typeof business.business_hours === 'string' ? JSON.parse(business.business_hours) : (business.business_hours || null),
         target_audience: typeof business.target_audience === 'string' ? JSON.parse(business.target_audience) : (business.target_audience || []),
         special_offerings: typeof business.special_offerings === 'string' ? JSON.parse(business.special_offerings) : (business.special_offerings || [])
-    };
+    });
 }
 
 function parseJsonField(val) {

@@ -5,8 +5,11 @@
  *
  * Official asian.directory voice lives in SYSTEM_PROMPT_TEXT. Greetings and
  * vague need asks (hungry / what should I eat / bored / help) clarify first
- * and never search junk tokens. Specified turns still use search-query.js +
- * searchBusinesses. If XAI_API_KEY (or GROK_API_KEY) is set, a short Grok
+ * and never search junk tokens. Clarify chips are coverage-backed from the
+ * taxonomy: up to 3 parents/subs with search or mapped count > 0, preferring
+ * one food, one stay, one professional. Sushi? stays hidden until a row maps
+ * to sushi. Specified turns still use search-query.js + searchBusinesses. If
+ * XAI_API_KEY (or GROK_API_KEY) is set, a short Grok
  * reply is written from the listing JSON only. Missing fields stay missing —
  * no invented wifi, hours, CEOs, or reviews.
  *
@@ -30,6 +33,7 @@ const {
     mentionsOutsideCoverage,
     decodeListingFields
 } = require('./search-query');
+const { pickClarifyChips, mapListing } = require('./categories');
 
 const CHAT_LISTING_LIMIT = 8;
 const CHAT_HISTORY_LIMIT = 8;
@@ -57,8 +61,8 @@ const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Lao
 
 const CLARIFY_CHIPS = {
     greeting: ['Eat?', 'Coffee?', 'Vientiane?'],
-    food: ['Sushi?', 'Coffee?', 'Vientiane?'],
-    need: ['Coffee?', 'Hotels?', 'Vientiane?']
+    food: ['Coffee?', 'Hotels?', 'Lawyers?'],
+    need: ['Coffee?', 'Hotels?', 'Lawyers?']
 };
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -74,6 +78,7 @@ const CARD_LISTING_FIELDS = [
     'id',
     'name',
     'category',
+    'taxonomy',
     'description',
     'address',
     'city',
@@ -129,7 +134,11 @@ function copyPresentFields(row, keys) {
  * Homepage card row: public search fields only. Never add wifi/hours/reviews.
  */
 function publicListing(row) {
-    return copyPresentFields(decodeListingFields(row), CARD_LISTING_FIELDS);
+    const decoded = decodeListingFields(row);
+    const out = copyPresentFields(decoded, CARD_LISTING_FIELDS);
+    if (!out) return out;
+    if (!out.taxonomy) out.taxonomy = mapListing(decoded);
+    return out;
 }
 
 /**
@@ -243,6 +252,11 @@ function clarifyReply(kind) {
 
 function clarifyChips(kind) {
     return (CLARIFY_CHIPS[kind] || CLARIFY_CHIPS.need).slice();
+}
+
+async function clarifyChipsForRequest(kind, searchBusinesses) {
+    const chips = await pickClarifyChips(kind, { searchBusinesses });
+    return chips.length ? chips : clarifyChips(kind);
 }
 
 function logChatResult({ mode, query, n }) {
@@ -413,7 +427,7 @@ async function handleChatRequest({
     const clarifyKind = shouldClarify(latest, historyTurns);
 
     if (clarifyKind) {
-        const chips = clarifyChips(clarifyKind);
+        const chips = await clarifyChipsForRequest(clarifyKind, searchBusinesses);
         const spoken = sanitizeSpokenReply(clarifyReply(clarifyKind), []);
         logChatResult({ mode: 'clarify', query: latest, n: 0 });
         return {
@@ -517,6 +531,7 @@ module.exports = {
     shouldClarify,
     clarifyReply,
     clarifyChips,
+    clarifyChipsForRequest,
     GREETING_REPLY,
     FOOD_CLARIFY_REPLY,
     NEED_CLARIFY_REPLY,

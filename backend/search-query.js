@@ -20,6 +20,9 @@
  *   - ranks name/category hits above description/address matches
  *   - consumer food/drink/stay queries boost cafes/restaurants/hotels and
  *     demote factories/machineries (factories still match, just later)
+ *   - mapped primary/sub (categories.js) are query aliases and ranking
+ *     signals: restaurants matches restaurant/cafe/hotel tokens already
+ *     on the row; food_drink/hotels_travel/legal beat industry parents
  *   - merges the last few user turns when the new message is a short follow-up
  *     (cheaper / wifi / working / "in Vientiane only")
  *
@@ -155,6 +158,16 @@ const INDUSTRIAL_SIGNALS = [
 const CONSUMER_BOOST = 80;
 const INDUSTRIAL_DEMOTE = 90;
 const BUSINESS_SERVICES_DEMOTE = 20;
+const TAXONOMY_PARENT_BOOST = 40;
+const TAXONOMY_INDUSTRY_DEMOTE = 40;
+
+const {
+    mapListing,
+    termAliases,
+    queryConsumerParents,
+    CONSUMER_PARENTS,
+    INDUSTRY_PARENTS
+} = require('./categories');
 
 const GREETING_LINE = "That's not a listing. Try a business name, or a city + what they do.";
 const EMPTY_LINE = 'Nothing in the directory for that. Try a name, or a city + what they do.';
@@ -496,16 +509,28 @@ function scoreBusiness(business, parsed) {
     const city = haystack(business && business.city);
     const country = haystack(business && business.country);
 
+    const mapped = mapListing(business);
+    const mappedHay = [mapped.primary, mapped.sub, mapped.label].join(' ').toLowerCase();
+
     let score = 0;
     for (const term of parsed.contentTerms) {
-        if (name.includes(term)) score += 100;
-        else if (category.includes(term)) score += 50;
-        else if (city.includes(term)) score += 25;
-        else if (description.includes(term)) score += 10;
-        else if (address.includes(term) || keywords.includes(term) || country.includes(term)) score += 5;
+        const aliases = termAliases(term);
+        const nameHit = aliases.some((alias) => name.includes(alias));
+        const categoryHit = aliases.some((alias) => category.includes(alias) || mappedHay.includes(alias));
+        const cityHit = aliases.some((alias) => city.includes(alias));
+        const descriptionHit = aliases.some((alias) => description.includes(alias));
+        const otherHit = aliases.some((alias) => (
+            address.includes(alias) || keywords.includes(alias) || country.includes(alias)
+        ));
+
+        if (nameHit) score += 100;
+        else if (categoryHit) score += 50;
+        else if (cityHit) score += 25;
+        else if (descriptionHit) score += 10;
+        else if (otherHit) score += 5;
 
         // Brand-leading descriptions ("ANZ is the first…") should beat a stray address hit.
-        if (description.startsWith(term)) score += 40;
+        if (aliases.some((alias) => description.startsWith(alias))) score += 40;
     }
 
     for (const loc of parsed.locationTerms) {
@@ -525,6 +550,15 @@ function scoreBusiness(business, parsed) {
             score -= INDUSTRIAL_DEMOTE;
         } else if (isConsumerPlaceQuery(parsed) && listingFaceText(business).includes('business services')) {
             score -= BUSINESS_SERVICES_DEMOTE;
+        }
+    }
+
+    const consumerParents = queryConsumerParents(parsed);
+    if (consumerParents.size) {
+        if (consumerParents.has(mapped.primary) && CONSUMER_PARENTS.has(mapped.primary)) {
+            score += TAXONOMY_PARENT_BOOST;
+        } else if (INDUSTRY_PARENTS.has(mapped.primary)) {
+            score -= TAXONOMY_INDUSTRY_DEMOTE;
         }
     }
 
@@ -568,17 +602,25 @@ function buildContentSearchSql(parsed, dialect = 'pg') {
     ];
 
     for (const term of parsed.contentTerms) {
-        const like = `%${term}%`;
+        const aliases = termAliases(term);
+        const aliasParts = [];
         if (dialect === 'pg') {
-            params.push(like);
-            const placeholder = `$${params.length}`;
-            conditions.push(`(${fields.map((field) => `LOWER(${field}) LIKE ${placeholder}`).join(' OR ')})`);
+            for (const alias of aliases) {
+                params.push(`%${alias}%`);
+                const placeholder = `$${params.length}`;
+                aliasParts.push(fields.map((field) => `LOWER(${field}) LIKE ${placeholder}`).join(' OR '));
+            }
+            conditions.push(`(${aliasParts.join(' OR ')})`);
         } else {
-            const parts = fields.map((field) => {
-                params.push(like);
-                return `LOWER(${field}) LIKE ?`;
-            });
-            conditions.push(`(${parts.join(' OR ')})`);
+            for (const alias of aliases) {
+                const like = `%${alias}%`;
+                const parts = fields.map((field) => {
+                    params.push(like);
+                    return `LOWER(${field}) LIKE ?`;
+                });
+                aliasParts.push(parts.join(' OR '));
+            }
+            conditions.push(`(${aliasParts.join(' OR ')})`);
         }
     }
 
@@ -714,6 +756,8 @@ module.exports = {
     isCuisinePlaceQuery,
     decodeMojibake,
     decodeListingFields,
+    mapListing,
+    termAliases,
     isGreeting,
     isFollowUp,
     mentionsOutsideCoverage,
