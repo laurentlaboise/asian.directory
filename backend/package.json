@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test search-query.test.js"
+    "test": "node --test search-query.test.js chat.test.js"
   },
   "keywords": ["api", "database", "express", "crm", "directory", "asia"],
   "author": "",

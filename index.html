@@ -221,6 +221,7 @@
         const sendButtonChat = document.getElementById('send-button-chat');
         let isChatActive = false;
         let userTurns = [];
+        let conversationTurns = [];
 
         // Tiny port of backend/search-query.js (GH Pages cannot require() it).
         const CHAT_CARD_LIMIT = 20;
@@ -234,12 +235,14 @@
             'hello', 'hi', 'hey', 'i', 'my', 'our',
             'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
             'else', 'instead', 'again', 'nearby', 'also', 'any',
-            'business', 'businesses'
+            'business', 'businesses',
+            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
         ]);
         const CHAT_GREETINGS = new Set(['hello', 'hi', 'hey']);
         const CHAT_FOLLOW_UP_CUES = new Set([
             'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
-            'else', 'instead', 'again', 'nearby', 'also', 'any'
+            'else', 'instead', 'again', 'nearby', 'also', 'any',
+            'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
         ]);
         const CHAT_COUNTRY_GENERICS = new Set(['laos', 'lao', 'pdr']);
         const CHAT_LOCATION_HINTS = new Set([
@@ -463,6 +466,7 @@
             // Clear chat container
             chatContainer.innerHTML = '';
             userTurns = [];
+            conversationTurns = [];
             
             // Hide chat elements and show initial screen
             chatInput.style.display = 'none';
@@ -582,15 +586,19 @@
             const truncated = list.length > CHAT_CARD_LIMIT;
             const shown = truncated ? list.slice(0, CHAT_CARD_LIMIT) : list;
             const terms = meta.terms || [];
-            const intro = buildAssistantLine({
-                prompt: meta.prompt || '',
-                terms,
-                results: shown,
-                truncated,
-                retried: !!meta.retried,
-                emptyReason: meta.emptyReason
-            });
-            const chips = buildFollowUpChips(terms, shown);
+            const intro = typeof meta.reply === 'string' && meta.reply.trim()
+                ? meta.reply.trim()
+                : buildAssistantLine({
+                    prompt: meta.prompt || '',
+                    terms,
+                    results: shown,
+                    truncated,
+                    retried: !!meta.retried,
+                    emptyReason: meta.emptyReason
+                });
+            const chips = Array.isArray(meta.chips) && meta.chips.length
+                ? meta.chips.slice(0, 3)
+                : buildFollowUpChips(terms, shown);
             const chipsHtml = chips.length
                 ? `<div class="mt-4 flex flex-wrap gap-2">${chips.map((chip) => (
                     `<button type="button" class="follow-up-chip px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 hover:bg-yellow-400 hover:text-gray-900 hover:border-yellow-400 transition-colors" data-chip="${escapeHtml(chip)}">${escapeHtml(chip)}</button>`
@@ -599,10 +607,10 @@
 
             let responseContent;
             if (shown.length === 0) {
-                responseContent = `<p class="text-gray-600 dark:text-gray-400">${escapeHtml(intro)}</p>${chipsHtml}`;
+                responseContent = `<p class="text-gray-600 dark:text-gray-400">${escapeHtml(intro).replace(/\n/g, '<br>')}</p>${chipsHtml}`;
             } else {
                  responseContent = `
-                    <p class="mb-4">${escapeHtml(intro)}</p>
+                    <p class="mb-4">${escapeHtml(intro).replace(/\n/g, '<br>')}</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         ${shown.map(business => {
                             const name = decodeMojibake(business.name);
@@ -676,18 +684,22 @@
             scrollToBottom();
         };
 
-        const getAIResponse = (prompt) => {
-            sendButton.disabled = true;
-            sendButtonChat.disabled = true;
-            addThinkingIndicator();
+        const logConversation = (prompt, results) => {
+            if (!results.length) return;
+            fetch(`${API_BASE_URL}/conversations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userQuery: prompt,
+                    aiResponse: results.slice(0, CHAT_CARD_LIMIT),
+                    businessIds: results.slice(0, CHAT_CARD_LIMIT).map((b) => b.id)
+                })
+            }).catch((err) => console.error('Error saving conversation:', err));
+        };
 
-            const searchQuery = reformulateWithHistory(prompt, userTurns);
-            userTurns = [...userTurns, prompt].slice(-3);
+        const searchOnlyFallback = (prompt, enableButtons) => {
+            const searchQuery = reformulateWithHistory(prompt, userTurns.slice(0, -1));
             const terms = chatContentTerms(searchQuery);
-            const enableButtons = () => {
-                sendButton.disabled = false;
-                sendButtonChat.disabled = false;
-            };
             const metaBase = { prompt: searchQuery, terms };
 
             if (isGreetingPrompt(prompt) || isGreetingPrompt(searchQuery)) {
@@ -717,17 +729,7 @@
 
             const finish = (results, retried) => {
                 addAIResponse(results, { ...metaBase, retried, emptyReason: results.length ? undefined : 'none' });
-                if (results.length) {
-                    fetch(`${API_BASE_URL}/conversations`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            userQuery: prompt,
-                            aiResponse: results.slice(0, CHAT_CARD_LIMIT),
-                            businessIds: results.slice(0, CHAT_CARD_LIMIT).map((b) => b.id)
-                        })
-                    }).catch((err) => console.error('Error saving conversation:', err));
-                }
+                logConversation(prompt, results);
                 enableButtons();
             };
 
@@ -752,6 +754,54 @@
                         retried = true;
                     }
                     finish(results, retried);
+                });
+        };
+
+        const getAIResponse = (prompt) => {
+            sendButton.disabled = true;
+            sendButtonChat.disabled = true;
+            addThinkingIndicator();
+
+            userTurns = [...userTurns, prompt].slice(-8);
+            conversationTurns = [...conversationTurns, { role: 'user', content: prompt }].slice(-8);
+            const enableButtons = () => {
+                sendButton.disabled = false;
+                sendButtonChat.disabled = false;
+            };
+
+            fetch(`${API_BASE_URL}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: conversationTurns.slice(-8),
+                    locale: document.documentElement.lang || navigator.language || 'en'
+                })
+            })
+                .then(async (response) => {
+                    if (!response.ok || response.status >= 500) {
+                        throw new Error(`chat ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (!data || data.success !== true || typeof data.reply !== 'string') {
+                        throw new Error('chat invalid');
+                    }
+                    return data;
+                })
+                .then((data) => {
+                    const listings = Array.isArray(data.listings) ? data.listings : [];
+                    conversationTurns = [...conversationTurns, { role: 'assistant', content: data.reply }].slice(-8);
+                    addAIResponse(listings, {
+                        reply: data.reply,
+                        chips: data.chips,
+                        prompt: data.query || prompt,
+                        terms: chatContentTerms(data.query || prompt)
+                    });
+                    logConversation(prompt, listings);
+                    enableButtons();
+                })
+                .catch((error) => {
+                    console.error('Error fetching /api/chat:', error);
+                    searchOnlyFallback(prompt, enableButtons);
                 });
         };
         

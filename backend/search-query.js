@@ -17,6 +17,7 @@
  *   - retries once with the strongest leftover token if the AND set is empty
  *   - ranks name/category hits above description/address matches
  *   - merges the last few user turns when the new message is a short follow-up
+ *     (cheaper / wifi / working / "in Vientiane only")
  *
  * Public search stays status='active'. Location-only queries (just "laos")
  * and greetings return no SQL so they cannot dump the catalog.
@@ -34,14 +35,18 @@ const STOPWORDS = new Set([
     // Follow-up / filler words. They refine a prior turn; they are not listing text.
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
-    'business', 'businesses'
+    'business', 'businesses',
+    // Amenity / quality follow-ups. They refine a prior city+category; they are
+    // not listing text and must not AND into SQL (wifi/working would zero the set).
+    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
 ]);
 
 const GREETINGS = new Set(['hello', 'hi', 'hey']);
 
 const FOLLOW_UP_CUES = new Set([
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
-    'else', 'instead', 'again', 'nearby', 'also', 'any'
+    'else', 'instead', 'again', 'nearby', 'also', 'any',
+    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only'
 ]);
 
 // Tokens that match almost the entire LA catalog via description/address text.

@@ -165,6 +165,8 @@ test('conversational prompts drop leftover tokens that are not in listing text',
     assert.deepEqual(parseSearchQuery('best coffee places').contentTerms, ['coffee']);
     assert.deepEqual(parseSearchQuery('Find a good coffee shop in Vientiane').contentTerms, ['coffee', 'vientiane']);
     assert.deepEqual(parseSearchQuery('I need a lawyer').contentTerms, ['lawyer']);
+    assert.deepEqual(parseSearchQuery('which is good for working?').contentTerms, []);
+    assert.deepEqual(parseSearchQuery('do they have wifi?').contentTerms, []);
     assert.equal(parseSearchQuery('hello').isEmpty, true);
     assert.equal(parseSearchQuery('hi').isEmpty, true);
     assert.equal(parseSearchQuery('hey please').isEmpty, true);
@@ -216,10 +218,16 @@ test('follow-ups append previous city and category words', () => {
     assert.equal(isFollowUp('open late?'), true);
     assert.equal(isFollowUp('any others?'), true);
     assert.equal(isFollowUp('In Vientiane?'), true);
+    assert.equal(isFollowUp('which is good for working?'), true);
+    assert.equal(isFollowUp('do they have wifi?'), true);
+    assert.equal(isFollowUp('in Vientiane only'), true);
     assert.equal(isFollowUp('best coffee places'), false);
     assert.equal(isFollowUp('hello'), false);
 
     assert.equal(reformulateWithHistory('cheaper?', history), 'cheaper? coffee');
+    assert.equal(reformulateWithHistory('which is good for working?', history), 'which is good for working? coffee');
+    assert.equal(reformulateWithHistory('do they have wifi?', history), 'do they have wifi? coffee');
+    assert.equal(reformulateWithHistory('in Vientiane only', history), 'in Vientiane only coffee');
     assert.equal(reformulateWithHistory('In Vientiane?', history), 'In Vientiane? coffee');
     assert.equal(reformulateWithHistory('Hotels instead?', history), 'Hotels instead?');
     assert.equal(
