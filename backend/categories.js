@@ -399,7 +399,8 @@ function mappedCountFor(keys, mappedCounts) {
 const CHIP_BUCKETS = {
     food: [
         { chip: 'Coffee?', terms: ['coffee'], keys: ['cafe', 'food_drink'] },
-        { chip: 'Restaurants?', terms: ['restaurant'], keys: ['restaurant'] }
+        { chip: 'Restaurants?', terms: ['restaurant'], keys: ['restaurant'] },
+        { chip: 'Lao food?', terms: ['lao food', 'laotian'], keys: ['lao'], requireMapped: true }
     ],
     stay: [
         { chip: 'Hotels?', terms: ['hotel'], keys: ['hotel', 'hotels_travel'] },
@@ -410,6 +411,8 @@ const CHIP_BUCKETS = {
         { chip: 'Banks?', terms: ['bank'], keys: ['bank', 'banks_finance'] }
     ]
 };
+
+const NON_FOOD_CLARIFY_CHIP = /^(Hotels|Travel|Lawyers|Banks|Construction)\?$/i;
 
 const SUSHI_CHIP = {
     chip: 'Sushi?',
@@ -451,45 +454,54 @@ async function chipHasCoverage(def, { searchBusinesses, mappedCounts } = {}) {
     return false;
 }
 
+function uniqueChips(list) {
+    const out = [];
+    for (const chip of list || []) {
+        if (chip && !out.includes(chip)) out.push(chip);
+    }
+    return out;
+}
+
 /**
- * Up to 3 chips from parents/subs that have live coverage.
- * Prefer one food, one stay, one professional. Never Sushi? until a row
- * maps to sushi.
+ * Up to 3 coverage-backed chips.
+ * Food-intent (hungry / eat / food): food-domain + city only. Never Hotels?,
+ * Lawyers?, Banks?, or Construction?. Sushi? / Lao food? only with coverage.
+ * Greeting and general need keep a broader food / stay / professional mix.
  */
 async function pickClarifyChips(kind, opts = {}) {
-    const covered = [];
     const seen = new Set();
 
     const take = async (def) => {
         if (!def || seen.has(def.chip)) return null;
         if (await chipHasCoverage(def, opts)) {
             seen.add(def.chip);
-            covered.push(def.chip);
             return def.chip;
         }
         return null;
     };
 
+    if (kind === 'food') {
+        const chips = [];
+        for (const def of [...CHIP_BUCKETS.food, SUSHI_CHIP]) {
+            if (chips.length >= 3) break;
+            const chip = await take(def);
+            if (chip) chips.push(chip);
+        }
+        if (chips.length < 3 && !chips.includes(LOCATION_CHIP)) chips.push(LOCATION_CHIP);
+        if (!chips.length) chips.push('Coffee?', LOCATION_CHIP);
+        return uniqueChips(chips)
+            .filter((chip) => !NON_FOOD_CLARIFY_CHIP.test(chip))
+            .slice(0, 3);
+    }
+
     const food = await take(CHIP_BUCKETS.food[0]) || await take(CHIP_BUCKETS.food[1]);
     const stay = await take(CHIP_BUCKETS.stay[0]) || await take(CHIP_BUCKETS.stay[1]);
     const professional = await take(CHIP_BUCKETS.professional[0]) || await take(CHIP_BUCKETS.professional[1]);
 
-    if (kind === 'food' && await chipHasCoverage(SUSHI_CHIP, opts)) {
-        // Only when a live row actually maps to sushi.
-        if (!seen.has(SUSHI_CHIP.chip)) {
-            seen.add(SUSHI_CHIP.chip);
-            covered.unshift(SUSHI_CHIP.chip);
-        }
-    }
-
     let chips = [food, stay, professional].filter(Boolean);
 
-    if (covered.includes(SUSHI_CHIP.chip) && !chips.includes(SUSHI_CHIP.chip)) {
-        chips = [SUSHI_CHIP.chip, stay, professional].filter(Boolean);
-    }
-
     if (kind === 'greeting') {
-        chips = [INTENT_CHIP, food || stay || professional, LOCATION_CHIP].filter(Boolean);
+        chips = uniqueChips([INTENT_CHIP, food, stay || professional, LOCATION_CHIP]);
     } else if (chips.length < 3) {
         for (const def of [
             ...CHIP_BUCKETS.food,
@@ -523,6 +535,7 @@ module.exports = {
     CHIP_BUCKETS,
     SUSHI_CHIP,
     LOCATION_CHIP,
+    NON_FOOD_CLARIFY_CHIP,
     mapListing,
     attachTaxonomy,
     termAliases,

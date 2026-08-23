@@ -192,16 +192,35 @@ test('sushi chip is absent when no sushi rows map or search', async () => {
     );
 });
 
-test('hungry chips are coverage-backed and prefer food / stay / professional', async () => {
+test('hungry chips stay food-domain; hello chips may include a non-food parent', async () => {
     const mappedCounts = countMapped([
-        CAFE_BUSINESS_SERVICES, SALANA_HOTEL, DFDL_LEGAL
+        CAFE_BUSINESS_SERVICES, SALANA_HOTEL, DFDL_LEGAL, KUALAO_RESTAURANT
     ]);
-    const chips = await pickClarifyChips('food', { mappedCounts });
-    assert.ok(chips.includes('Coffee?') || chips.includes('Restaurants?'));
-    assert.ok(chips.includes('Hotels?') || chips.includes('Travel?'));
-    assert.ok(chips.includes('Lawyers?') || chips.includes('Banks?'));
-    assert.ok(!chips.some((chip) => /sushi/i.test(chip)));
-    assert.ok(chips.length <= 3);
+    const hungry = await pickClarifyChips('food', { mappedCounts });
+    assert.ok(hungry.includes('Coffee?') || hungry.includes('Restaurants?'));
+    assert.ok(hungry.some((chip) => /Coffee|Restaurants|Lao food|Vientiane/i.test(chip)));
+    assert.ok(!hungry.some((chip) => /Hotels|Travel|Lawyers|Banks|Construction/i.test(chip)));
+    assert.ok(!hungry.some((chip) => /sushi/i.test(chip)));
+    assert.ok(hungry.length <= 3);
+
+    const hello = await pickClarifyChips('greeting', { mappedCounts });
+    assert.ok(hello.some((chip) => /Hotels|Travel|Lawyers|Banks/i.test(chip)));
+    assert.ok(!hello.some((chip) => /sushi/i.test(chip)));
+
+    const laoRow = {
+        id: 9,
+        name: 'Lan Xang Kitchen',
+        category: 'laotian restaurant',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    assert.equal(mapListing(laoRow).sub, 'lao');
+    const withLao = await pickClarifyChips('food', {
+        mappedCounts: countMapped([CAFE_BUSINESS_SERVICES, laoRow, SALANA_HOTEL])
+    });
+    assert.ok(withLao.includes('Lao food?'));
+    assert.ok(!withLao.some((chip) => /Hotels|Lawyers|Banks|Construction/i.test(chip)));
 
     const probed = [];
     const result = await handleChatRequest({
@@ -211,6 +230,7 @@ test('hungry chips are coverage-backed and prefer food / stay / professional', a
             probed.push(query);
             if (/sushi/i.test(query)) return [];
             if (/coffee/i.test(query)) return [VANMAI_COFFEE];
+            if (/restaurant/i.test(query)) return [KUALAO_RESTAURANT];
             if (/hotel/i.test(query)) return [SALANA_HOTEL];
             if (/lawyer|legal/i.test(query)) return [DFDL_LEGAL];
             return [];
@@ -221,7 +241,6 @@ test('hungry chips are coverage-backed and prefer food / stay / professional', a
     assert.deepEqual(result.body.listings, []);
     assert.ok(probed.every((query) => !/\bhungry\b/i.test(query)));
     assert.ok(result.body.chips.includes('Coffee?'));
-    assert.ok(result.body.chips.includes('Hotels?'));
-    assert.ok(result.body.chips.includes('Lawyers?'));
+    assert.ok(!result.body.chips.some((chip) => /Hotels|Travel|Lawyers|Banks|Construction/i.test(chip)));
     assert.ok(!result.body.chips.includes('Sushi?'));
 });

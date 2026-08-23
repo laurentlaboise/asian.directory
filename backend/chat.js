@@ -6,9 +6,10 @@
  * Official asian.directory voice lives in SYSTEM_PROMPT_TEXT. Greetings and
  * vague need asks (hungry / what should I eat / bored / help) clarify first
  * and never search junk tokens. Clarify chips are coverage-backed from the
- * taxonomy: up to 3 parents/subs with search or mapped count > 0, preferring
- * one food, one stay, one professional. Sushi? stays hidden until a row maps
- * to sushi. Specified turns still use search-query.js + searchBusinesses. If
+ * taxonomy (search or mapped count > 0). Food-intent clarify is food-domain
+ * + city only — never Hotels?, Lawyers?, Banks?, or Construction?. Greeting
+ * and general need keep a broader coverage-backed mix. Sushi? stays hidden
+ * until a row maps to sushi. Specified turns still use search-query.js + searchBusinesses. If
  * XAI_API_KEY (or GROK_API_KEY) is set, a short Grok
  * reply is written from the listing JSON only. Missing fields stay missing —
  * no invented wifi, hours, CEOs, or reviews.
@@ -61,7 +62,7 @@ const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Lao
 
 const CLARIFY_CHIPS = {
     greeting: ['Eat?', 'Coffee?', 'Vientiane?'],
-    food: ['Coffee?', 'Hotels?', 'Lawyers?'],
+    food: ['Coffee?', 'Restaurants?', 'Vientiane?'],
     need: ['Coffee?', 'Hotels?', 'Lawyers?']
 };
 
