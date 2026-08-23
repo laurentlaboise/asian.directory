@@ -290,6 +290,7 @@ The server uses simple Node.js with Express. Any changes to the code require a r
 - Health Check: `http://localhost:3000/api/health`
 - All Businesses: `http://localhost:3000/api/businesses`
 - Search: `http://localhost:3000/api/businesses/search?q=<query>`
+- Chat: `POST http://localhost:3000/api/chat`
 - Conversations: `http://localhost:3000/api/conversations`
 
 ### Database Location
@@ -299,3 +300,4 @@ The server uses simple Node.js with Express. Any changes to the code require a r
 ### Environment Variables
 - `PORT` - Server port (default: 3000)
 - `ALLOWED_ORIGINS` - CORS allowed origins (default: all)
+- `XAI_API_KEY` - Optional xAI key for homepage chat (alias: `GROK_API_KEY`)

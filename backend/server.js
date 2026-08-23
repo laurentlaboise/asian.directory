@@ -11,6 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const packageJson = require('./package.json');
 const { reformulateWithHistory, parseHistoryParam } = require('./search-query');
+const { handleChatRequest, omitChatReplyFromLog } = require('./chat');
 
 // ---------------------------------------------------------------------------
 // Database auto-detection: PostgreSQL when DATABASE_URL is set, else SQLite
@@ -142,6 +143,7 @@ function csrfProtection(req, res, next) {
     // Skip for public endpoints that don't require session auth
     if (req.path === '/analytics/event' || req.path === '/api/analytics/event' ||
         req.path === '/conversations' || req.path === '/api/conversations' ||
+        req.path === '/chat' || req.path === '/api/chat' ||
         req.path.startsWith('/public/') || req.path.startsWith('/api/public/')) {
         return next();
     }
@@ -377,6 +379,7 @@ app.get('/api', (req, res) => {
                 list: 'GET /api/conversations',
                 create: 'POST /api/conversations'
             },
+            chat: 'POST /api/chat',
             crm: {
                 dashboard: 'GET /api/crm/dashboard (requires auth, admin/editor)',
                 pipeline: 'GET /api/crm/pipeline (requires auth)',
@@ -1379,14 +1382,16 @@ app.delete('/api/businesses/:id', authenticateToken, async (req, res) => {
 
 app.post('/api/conversations', async (req, res) => {
     try {
-        const { userQuery, aiResponse, businessIds } = req.body;
-
-        if (!userQuery || !aiResponse) {
+        // SEO: ignore spoken reply. Logs are query + listing cards/ids only.
+        const raw = req.body || {};
+        if (!String(raw.userQuery || '').trim() || !Array.isArray(raw.aiResponse)) {
             return res.status(400).json({
                 success: false,
                 error: 'Missing required fields: userQuery, aiResponse'
             });
         }
+
+        const { userQuery, aiResponse, businessIds } = omitChatReplyFromLog(raw);
 
         if (!Array.isArray(aiResponse)) {
             return res.status(400).json({
@@ -1427,6 +1432,32 @@ app.get('/api/conversations', async (req, res) => {
     } catch (error) {
         console.error('Error fetching conversations:', error);
         res.status(500).json({ success: false, error: 'Failed to fetch conversations' });
+    }
+});
+
+// Public homepage chat. No v1 API key. CSRF-exempt. Rate-limited like search
+// via the /api/ generalLimiter. Listings come from searchBusinesses; Grok is
+// optional when XAI_API_KEY or GROK_API_KEY is set.
+// SEO: read-only on the catalog. Never write reply text into description,
+// keywords, or static listing HTML. Homepage-only.
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { messages, locale } = req.body || {};
+        const result = await handleChatRequest({
+            messages,
+            locale,
+            searchBusinesses: (query) => dbOperations.searchBusinesses(query)
+        });
+        return res.status(result.status).json(result.body);
+    } catch (error) {
+        console.error('Error in /api/chat:', error && error.message ? error.message : 'unknown');
+        res.status(200).json({
+            success: true,
+            mode: 'search',
+            reply: 'Nothing in the directory for that. Try a name, or a city + what they do.',
+            listings: [],
+            query: ''
+        });
     }
 });
 
