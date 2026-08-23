@@ -220,14 +220,249 @@
         const promptInputChat = document.getElementById('prompt-input-chat');
         const sendButtonChat = document.getElementById('send-button-chat');
         let isChatActive = false;
+        let userTurns = [];
+
+        // Tiny port of backend/search-query.js (GH Pages cannot require() it).
+        const CHAT_CARD_LIMIT = 20;
+        const CHAT_STOPWORDS = new Set([
+            'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
+            'in', 'into', 'is', 'it', 'near', 'of', 'on', 'or', 'the', 'to',
+            'vs', 'via', 'with', 'within', 'without', 'about', 'around', 'over',
+            'under', 'please', 'find', 'show', 'me', 'looking', 'look', 'search',
+            'best', 'better', 'good', 'great', 'need', 'want', 'some',
+            'places', 'place', 'spot', 'spots', 'shop', 'shops',
+            'hello', 'hi', 'hey', 'i', 'my', 'our',
+            'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
+            'else', 'instead', 'again', 'nearby', 'also', 'any',
+            'business', 'businesses'
+        ]);
+        const CHAT_GREETINGS = new Set(['hello', 'hi', 'hey']);
+        const CHAT_FOLLOW_UP_CUES = new Set([
+            'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
+            'else', 'instead', 'again', 'nearby', 'also', 'any'
+        ]);
+        const CHAT_COUNTRY_GENERICS = new Set(['laos', 'lao', 'pdr']);
+        const CHAT_LOCATION_HINTS = new Set([
+            ...CHAT_COUNTRY_GENERICS,
+            'vientiane', 'tokyo', 'bangkok', 'seoul', 'hanoi', 'singapore',
+            'jakarta', 'manila', 'kuala', 'lumpur', 'mumbai', 'delhi',
+            'luang', 'prabang', 'pakse', 'champasak', 'vieng', 'vang',
+            'japan', 'korea', 'china', 'thailand', 'vietnam', 'malaysia',
+            'indonesia', 'philippines', 'india', 'asia',
+            'osaka', 'kyoto', 'yokohama', 'beijing', 'shanghai'
+        ]);
+        const CHAT_OUT_OF_COVERAGE = new Set([
+            'tokyo', 'japan', 'osaka', 'kyoto', 'yokohama',
+            'seoul', 'korea', 'beijing', 'shanghai', 'ramen'
+        ]);
+        const CHAT_CITY_DISPLAY = {
+            vientiane: 'Vientiane', tokyo: 'Tokyo', bangkok: 'Bangkok', seoul: 'Seoul',
+            hanoi: 'Hanoi', singapore: 'Singapore', jakarta: 'Jakarta', manila: 'Manila',
+            mumbai: 'Mumbai', delhi: 'Delhi', pakse: 'Pakse', champasak: 'Champasak'
+        };
+        const CHAT_CATEGORY_PHRASES = {
+            coffee: 'coffee spots', cafe: 'cafes', hotel: 'hotels', hotels: 'hotels',
+            ramen: 'ramen spots', restaurant: 'restaurants', bank: 'bank matches',
+            lawyer: 'lawyer matches', travel: 'travel matches'
+        };
+
+        const chatTokens = (prompt) => String(prompt || '')
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter(Boolean);
+
+        const chatContentTerms = (prompt) => {
+            const terms = [];
+            const seen = new Set();
+            for (const token of chatTokens(prompt)) {
+                if (CHAT_STOPWORDS.has(token) || CHAT_COUNTRY_GENERICS.has(token)) continue;
+                if (token.length <= 2) continue;
+                if (!seen.has(token)) {
+                    seen.add(token);
+                    terms.push(token);
+                }
+            }
+            return terms;
+        };
+
+        const isGreetingPrompt = (prompt) => {
+            const tokens = chatTokens(prompt);
+            if (!tokens.length) return false;
+            const meaningful = tokens.filter((token) => !CHAT_STOPWORDS.has(token) || CHAT_GREETINGS.has(token));
+            return meaningful.length > 0 && meaningful.every((token) => CHAT_GREETINGS.has(token));
+        };
+
+        const isFollowUpPrompt = (prompt) => {
+            if (isGreetingPrompt(prompt)) return false;
+            const tokens = chatTokens(prompt);
+            if (!tokens.length) return false;
+            if (tokens.some((token) => CHAT_FOLLOW_UP_CUES.has(token))) return true;
+            const leftover = tokens.filter((token) => (
+                !CHAT_STOPWORDS.has(token)
+                && !CHAT_GREETINGS.has(token)
+                && !CHAT_COUNTRY_GENERICS.has(token)
+                && token.length > 2
+            ));
+            return leftover.length > 0 && leftover.every((token) => CHAT_LOCATION_HINTS.has(token)) && tokens.length <= 5;
+        };
+
+        const reformulateWithHistory = (latest, history) => {
+            const last3 = (history || []).map((turn) => String(turn || '').trim()).filter(Boolean).slice(-3);
+            if (!last3.length || !isFollowUpPrompt(latest)) return String(latest || '');
+            const cities = [];
+            const categories = [];
+            for (const turn of last3) {
+                for (const term of chatContentTerms(turn)) {
+                    if (CHAT_LOCATION_HINTS.has(term)) {
+                        if (!cities.includes(term)) cities.push(term);
+                    } else if (!categories.includes(term)) {
+                        categories.push(term);
+                    }
+                }
+            }
+            const latestTokens = new Set(chatTokens(latest));
+            const latestTerms = chatContentTerms(latest);
+            const extras = (latestTokens.has('instead') ? cities : [...categories, ...cities])
+                .filter((term) => !latestTerms.includes(term) && !latestTokens.has(term));
+            return extras.length ? `${String(latest || '').trim()} ${extras.join(' ')}`.trim() : String(latest || '');
+        };
+
+        const strongestChatTokens = (terms) => {
+            if (!terms || terms.length <= 1) return terms || [];
+            let best = terms[0];
+            let bestScore = CHAT_LOCATION_HINTS.has(best) ? best.length * 0.25 : best.length;
+            for (const term of terms.slice(1)) {
+                const score = CHAT_LOCATION_HINTS.has(term) ? term.length * 0.25 : term.length;
+                if (score > bestScore) {
+                    best = term;
+                    bestScore = score;
+                }
+            }
+            return [best];
+        };
+
+        const decodeMojibake = (value) => {
+            if (typeof value !== 'string' || !value) return value || '';
+            if (!/Ã.|àº|à»/.test(value)) return value;
+            try {
+                const bytes = Uint8Array.from(value, (ch) => ch.charCodeAt(0) & 0xff);
+                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            } catch {
+                return value;
+            }
+        };
+
+        const escapeHtml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const dominantCityName = (results) => {
+            const counts = new Map();
+            for (const row of results || []) {
+                const city = String((row && row.city) || '').trim();
+                if (!city) continue;
+                const key = city.toLowerCase();
+                counts.set(key, { name: city, count: (counts.get(key)?.count || 0) + 1 });
+            }
+            let best = null;
+            for (const entry of counts.values()) {
+                if (!best || entry.count > best.count) best = entry;
+            }
+            const total = (results || []).length;
+            if (!best || best.count < Math.ceil(total / 2)) return '';
+            return best.name;
+        };
+
+        const cityFromTerms = (terms) => {
+            const list = terms || [];
+            if (list.includes('luang') && list.includes('prabang')) return 'Luang Prabang';
+            if (list.includes('vang') && list.includes('vieng')) return 'Vang Vieng';
+            for (const term of list) {
+                if (CHAT_CITY_DISPLAY[term]) return CHAT_CITY_DISPLAY[term];
+            }
+            return '';
+        };
+
+        const categoryPhrase = (terms) => {
+            for (const term of terms || []) {
+                if (CHAT_LOCATION_HINTS.has(term)) continue;
+                return CHAT_CATEGORY_PHRASES[term] || `${term} matches`;
+            }
+            return '';
+        };
+
+        const buildAssistantLine = ({ prompt, terms, results, truncated, retried, emptyReason }) => {
+            if (emptyReason === 'greeting' || isGreetingPrompt(prompt)) {
+                return "That's not a listing. Try a business name, or a city + what they do.";
+            }
+            const list = results || [];
+            if (!list.length) {
+                const outside = chatTokens(prompt).some((token) => CHAT_OUT_OF_COVERAGE.has(token));
+                const empty = 'Nothing in the directory for that. Try a name, or a city + what they do.';
+                return outside ? `${empty} We list Southeast Asia.` : empty;
+            }
+            if (truncated) return 'Too many matches. Showing a few.';
+            const category = categoryPhrase(terms);
+            const city = cityFromTerms(terms) || dominantCityName(list);
+            if (category && city) return `Here are ${category} in ${city}.`;
+            if (category) return `Here are ${category}.`;
+            if (city) return `Here are listings in ${city}.`;
+            return retried ? 'Closest matches I have.' : 'Closest matches I have.';
+        };
+
+        const buildFollowUpChips = (terms, results) => {
+            const category = (terms || []).find((term) => !CHAT_LOCATION_HINTS.has(term)) || '';
+            const hasCity = (terms || []).some((term) => CHAT_LOCATION_HINTS.has(term));
+            const chips = [];
+            if (category === 'coffee' && !hasCity) {
+                chips.push('In Vientiane?');
+                chips.push('Hotels instead?');
+            } else {
+                if (!hasCity) {
+                    const city = dominantCityName(results);
+                    if (city) chips.push(`In ${city}?`);
+                }
+                if (category === 'coffee') chips.push('Hotels instead?');
+                else if (category === 'hotel' || category === 'hotels') chips.push('Coffee instead?');
+                else if (category) chips.push('In Vientiane?');
+            }
+            if ((results || []).length) {
+                if (!chips.includes('Any others?')) chips.push('Any others?');
+                if (!chips.includes('Open late?')) chips.push('Open late?');
+            }
+            return chips.slice(0, 3);
+        };
 
         // --- CORE FUNCTIONS ---
         const scrollToBottom = () => { window.scrollTo(0, document.body.scrollHeight); };
+
+        const enterChatMode = () => {
+            if (!isChatActive) {
+                initialScreen.style.display = 'none';
+                chatInput.style.display = '';
+                newChatHeader.style.display = '';
+                isChatActive = true;
+            }
+        };
+
+        const submitPrompt = (userPrompt) => {
+            const text = String(userPrompt || '').trim();
+            if (!text) return;
+            enterChatMode();
+            addUserMessage(text);
+            getAIResponse(text);
+        };
 
         // Function to start a new chat (reset to initial state)
         const startNewChat = () => {
             // Clear chat container
             chatContainer.innerHTML = '';
+            userTurns = [];
             
             // Hide chat elements and show initial screen
             chatInput.style.display = 'none';
@@ -260,16 +495,9 @@
             e.preventDefault();
             const userPrompt = promptInput.value.trim();
             if (userPrompt) {
-                if (!isChatActive) {
-                    initialScreen.style.display = 'none';
-                    chatInput.style.display = '';
-                    newChatHeader.style.display = '';
-                    isChatActive = true;
-                }
-                addUserMessage(userPrompt);
                 promptInput.value = '';
                 promptInput.style.height = 'auto';
-                getAIResponse(userPrompt);
+                submitPrompt(userPrompt);
             }
         });
         
@@ -287,10 +515,9 @@
             e.preventDefault();
             const userPrompt = promptInputChat.value.trim();
             if (userPrompt) {
-                addUserMessage(userPrompt);
                 promptInputChat.value = '';
                 promptInputChat.style.height = 'auto';
-                getAIResponse(userPrompt);
+                submitPrompt(userPrompt);
             }
         });
         
@@ -298,8 +525,13 @@
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); promptFormChat.requestSubmit(); }
         });
 
-        // Event delegation for info buttons
+        // Event delegation for info buttons and follow-up chips
         chatContainer.addEventListener('click', function(event) {
+            const chip = event.target.closest('.follow-up-chip');
+            if (chip) {
+                submitPrompt(chip.dataset.chip || chip.textContent);
+                return;
+            }
             const button = event.target.closest('.more-info-btn');
             if (button) {
                 const infoId = button.dataset.infoId;
@@ -316,7 +548,7 @@
             const messageHtml = `
                 <div class="flex items-start gap-3 justify-end">
                     <div class="bg-yellow-400 text-gray-900 p-3 rounded-xl max-w-lg">
-                        <p>${text}</p>
+                        <p>${escapeHtml(text)}</p>
                     </div>
                     <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold">U</div>
                 </div>`;
@@ -342,33 +574,55 @@
             scrollToBottom();
         }
 
-        const addAIResponse = (results) => {
+        const addAIResponse = (results, meta = {}) => {
             const thinkingIndicator = document.getElementById('thinking-indicator');
             if (thinkingIndicator) thinkingIndicator.remove();
-            
+
+            const list = Array.isArray(results) ? results : [];
+            const truncated = list.length > CHAT_CARD_LIMIT;
+            const shown = truncated ? list.slice(0, CHAT_CARD_LIMIT) : list;
+            const terms = meta.terms || [];
+            const intro = buildAssistantLine({
+                prompt: meta.prompt || '',
+                terms,
+                results: shown,
+                truncated,
+                retried: !!meta.retried,
+                emptyReason: meta.emptyReason
+            });
+            const chips = buildFollowUpChips(terms, shown);
+            const chipsHtml = chips.length
+                ? `<div class="mt-4 flex flex-wrap gap-2">${chips.map((chip) => (
+                    `<button type="button" class="follow-up-chip px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 hover:bg-yellow-400 hover:text-gray-900 hover:border-yellow-400 transition-colors" data-chip="${escapeHtml(chip)}">${escapeHtml(chip)}</button>`
+                )).join('')}</div>`
+                : '';
+
             let responseContent;
-            if (results.length === 0) {
-                responseContent = `<p class="text-gray-600 dark:text-gray-400">I couldn't find any businesses that match your request. Please try asking in a different way!</p>`;
+            if (shown.length === 0) {
+                responseContent = `<p class="text-gray-600 dark:text-gray-400">${escapeHtml(intro)}</p>${chipsHtml}`;
             } else {
                  responseContent = `
-                    <p class="mb-4">Of course! Here are a few places in Asia that match your request:</p>
+                    <p class="mb-4">${escapeHtml(intro)}</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        ${results.map(business => {
-                            const shortDescription = business.description.split('.')[0] + '.';
-                            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`;
+                        ${shown.map(business => {
+                            const name = decodeMojibake(business.name);
+                            const description = decodeMojibake(business.description || '');
+                            const address = decodeMojibake(business.address || '');
+                            const shortDescription = description ? description.split('.')[0] + '.' : '';
+                            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
                             const phoneLink = business.phone ? `tel:${business.phone.replace(/ /g, '')}` : '#';
                             const socials = business.socials || {};
 
                             return `
                             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50 flex flex-col gap-3">
                                 <div>
-                                    <h3 class="font-bold text-lg text-yellow-500 dark:text-yellow-400">${business.name}</h3>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${shortDescription}</p>
+                                    <h3 class="font-bold text-lg text-yellow-500 dark:text-yellow-400">${escapeHtml(name)}</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${escapeHtml(shortDescription)}</p>
                                 </div>
                                 
                                 <a href="${googleMapsUrl}" target="_blank" class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 hover:text-yellow-500 transition-colors">
                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                                     <span>${business.address}</span>
+                                     <span>${escapeHtml(address)}</span>
                                 </a>
 
                                 <div class="mt-2 pt-3 border-t border-gray-200 dark:border-gray-700">
@@ -405,7 +659,8 @@
                             </div>
                         `;
                     }).join('')}
-                    </div>`;
+                    </div>
+                    ${chipsHtml}`;
             }
             
             const messageHtml = `
@@ -426,48 +681,77 @@
             sendButtonChat.disabled = true;
             addThinkingIndicator();
 
-            // Use the API to search businesses
-            fetch(`${API_BASE_URL}/businesses/search?q=${encodeURIComponent(prompt)}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const results = data.data;
-                        addAIResponse(results);
-                        
-                        // Save conversation to database
-                        const businessIds = results.map(b => b.id);
-                        fetch(`${API_BASE_URL}/conversations`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                userQuery: prompt,
-                                aiResponse: results,
-                                businessIds: businessIds
-                            })
-                        }).catch(err => console.error('Error saving conversation:', err));
-                    } else {
-                        addAIResponse([]);
+            const searchQuery = reformulateWithHistory(prompt, userTurns);
+            userTurns = [...userTurns, prompt].slice(-3);
+            const terms = chatContentTerms(searchQuery);
+            const enableButtons = () => {
+                sendButton.disabled = false;
+                sendButtonChat.disabled = false;
+            };
+            const metaBase = { prompt: searchQuery, terms };
+
+            if (isGreetingPrompt(prompt) || isGreetingPrompt(searchQuery)) {
+                addAIResponse([], { ...metaBase, emptyReason: 'greeting' });
+                enableButtons();
+                return;
+            }
+
+            const locationOnly = terms.length > 0 && terms.every((term) => CHAT_LOCATION_HINTS.has(term));
+            if (terms.length === 0 || locationOnly) {
+                addAIResponse([], { ...metaBase, emptyReason: 'none' });
+                enableButtons();
+                return;
+            }
+
+            const searchApi = (q) => fetch(`${API_BASE_URL}/businesses/search?q=${encodeURIComponent(q)}`)
+                .then((response) => response.json())
+                .then((data) => (data.success && Array.isArray(data.data) ? data.data : []));
+
+            const searchLocal = (searchTerms) => {
+                if (!searchTerms.length) return [];
+                return businesses.filter((business) => {
+                    const businessInfo = `${business.name || ''} ${business.category || ''} ${business.description || ''} ${business.address || ''} ${business.city || ''} ${(business.keywords || []).join(' ')}`.toLowerCase();
+                    return searchTerms.every((term) => businessInfo.includes(term));
+                });
+            };
+
+            const finish = (results, retried) => {
+                addAIResponse(results, { ...metaBase, retried, emptyReason: results.length ? undefined : 'none' });
+                if (results.length) {
+                    fetch(`${API_BASE_URL}/conversations`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userQuery: prompt,
+                            aiResponse: results.slice(0, CHAT_CARD_LIMIT),
+                            businessIds: results.slice(0, CHAT_CARD_LIMIT).map((b) => b.id)
+                        })
+                    }).catch((err) => console.error('Error saving conversation:', err));
+                }
+                enableButtons();
+            };
+
+            searchApi(terms.join(' '))
+                .then((results) => {
+                    if (results.length === 0 && terms.length > 1) {
+                        const strong = strongestChatTokens(terms);
+                        if (strong.join(' ') !== terms.join(' ')) {
+                            return searchApi(strong.join(' ')).then((retryResults) => {
+                                finish(retryResults, true);
+                            });
+                        }
                     }
+                    finish(results, false);
                 })
-                .catch(error => {
+                .catch((error) => {
                     console.error('Error fetching from API:', error);
-                    // Fallback to local search if API is unavailable
-                    const stopwords = new Set(['a','an','and','are','as','at','be','by','for','from','in','into','is','it','near','of','on','or','the','to','with']);
-                    const countryGenerics = new Set(['laos','lao','pdr']);
-                    const searchTerms = prompt.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(term => term.length > 2 && !stopwords.has(term) && !countryGenerics.has(term));
-                    if (searchTerms.length === 0) {
-                        addAIResponse([]);
-                    } else {
-                        const results = businesses.filter(business => {
-                            const businessInfo = `${business.name} ${business.category} ${business.description} ${business.address} ${(business.city || '')} ${business.keywords.join(' ')}`.toLowerCase();
-                            return searchTerms.every(term => businessInfo.includes(term));
-                        });
-                        addAIResponse(results);
+                    let results = searchLocal(terms);
+                    let retried = false;
+                    if (results.length === 0 && terms.length > 1) {
+                        results = searchLocal(strongestChatTokens(terms));
+                        retried = true;
                     }
-                })
-                .finally(() => {
-                    sendButton.disabled = false;
-                    sendButtonChat.disabled = false;
+                    finish(results, retried);
                 });
         };
         
