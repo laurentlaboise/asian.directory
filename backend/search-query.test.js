@@ -22,6 +22,8 @@ const {
     searchWithRetry,
     buildAssistantLine,
     buildFollowUpChips,
+    uniqueChips,
+    dropMismatchedRequestedCity,
     GREETING_LINE,
     EMPTY_LINE,
     EMPTY_OUTSIDE_LINE,
@@ -907,3 +909,89 @@ test('cheaper ones keeps Luang Prabang hotels; explicit city may switch', () => 
         'in Vientiane only restaurants'
     );
 });
+
+test('Vang Vieng stay does not promote Vientiane hotels from a description mention', () => {
+    const parsed = parseSearchQuery('place to stay in Vang Vieng');
+    assert.ok(parsed.contentTerms.includes('stay'));
+    assert.ok(parsed.contentTerms.includes('vang'));
+    assert.ok(parsed.contentTerms.includes('vieng'));
+    assert.equal(nextRetryQuery(parsed), null);
+
+    const vientianeHotel = {
+        id: 9401,
+        name: 'Salana Boutique Hotel',
+        category: 'tourism',
+        description: 'Day trips to Vang Vieng from Vientiane. A place to stay.',
+        address: 'Vientiane, Lao PDR',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const vangViengHotel = {
+        id: 9402,
+        name: 'Amari Vang Vieng Hotel',
+        category: 'tourism',
+        description: 'A hotel in Vang Vieng.',
+        address: 'Vang Vieng, Laos',
+        city: 'Vang Vieng',
+        country: 'LA',
+        status: 'active'
+    };
+
+    const empty = rankBusinesses([vientianeHotel], parsed);
+    assert.deepEqual(empty, []);
+    assert.notEqual(
+        buildAssistantLine({ query: 'place to stay in Vang Vieng', parsed, results: [vientianeHotel] }),
+        'Here are stay matches in Vang Vieng.'
+    );
+    assert.equal(
+        buildAssistantLine({ query: 'place to stay in Vang Vieng', parsed, results: [] }),
+        EMPTY_LINE
+    );
+
+    const ranked = rankBusinesses([vientianeHotel, vangViengHotel], parsed);
+    assert.deepEqual(ranked.map((row) => row.id), [9402]);
+    assert.equal(
+        buildAssistantLine({ query: 'place to stay in Vang Vieng', parsed, results: ranked }),
+        'Here are stay matches in Vang Vieng.'
+    );
+    assert.deepEqual(
+        dropMismatchedRequestedCity([vientianeHotel], parsed),
+        []
+    );
+});
+
+test('follow-up chips never repeat In Vientiane', () => {
+    const lawyerChips = buildFollowUpChips({
+        parsed: parseSearchQuery('lawyer'),
+        results: [ANZ_LAO_BRANCH]
+    });
+    const vientianeChips = lawyerChips.filter((chip) => chip === 'In Vientiane?');
+    assert.equal(vientianeChips.length, 1);
+    assert.deepEqual(lawyerChips, uniqueChips(lawyerChips));
+
+    const coffeeCity = buildFollowUpChips({
+        parsed: parseSearchQuery('coffee in Vientiane'),
+        results: [VANMAI_COFFEE]
+    });
+    assert.equal(coffeeCity.filter((chip) => chip === 'In Vientiane?').length, 1);
+    assert.deepEqual(coffeeCity, uniqueChips(coffeeCity));
+});
+
+test('construction query excludes a Fitness/Gym name even when category says Construction', () => {
+    const gym = {
+        id: 9501,
+        name: 'Vientiane Fitness',
+        category: 'Construction',
+        description: 'A gym. Description must not drive this.',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const parsed = parseSearchQuery('construction companies in Vientiane');
+    assert.equal(rowMatchesNamedCategory(gym, namedCategoryConstraint(['construction'])), false);
+    const ranked = rankBusinesses([gym, CONSTRUCTION_DOUBLE], parsed);
+    assert.equal(ranked.some((row) => /fitness|gym/i.test(row.name)), false);
+    assert.ok(ranked.some((row) => row.id === 2));
+});
+

@@ -52,9 +52,11 @@ const SYSTEM_PROMPT_TEXT = 'You are asian.directory\'s conversational assistant 
 
 const AMENITY_QUALITY_CUES = new Set([
     'wifi', 'hours', 'reviews', 'review', 'working', 'work', 'laptop', 'laptops',
-    'family', 'families', 'kids', 'children'
+    'family', 'families', 'kids', 'children',
+    'parking', 'late', 'open'
 ]);
 const PRICE_QUALITY_CUES = new Set(['cheaper', 'cheap', 'price', 'prices']);
+const MORE_FOLLOW_UP_CUES = new Set(['others', 'another', 'more', 'else']);
 
 const VAGUE_FOOD_TOKENS = new Set(['hungry', 'eat', 'food']);
 const VAGUE_NEED_TOKENS = new Set(['hungry', 'eat', 'food', 'bored', 'help']);
@@ -64,6 +66,7 @@ const FOOD_CLARIFY_REPLY = 'What kind of food, and in which city?';
 const NEED_CLARIFY_REPLY = 'What are you looking for, and in which city?';
 const MISSING_AMENITY_REPLY = 'I don’t have that information for these places yet.';
 const MISSING_PRICE_REPLY = 'I don’t have prices for these places yet.';
+const NO_MORE_REPLY = 'I don’t have more listings in that city yet.';
 const CITY_CLARIFY_REPLY = 'Which city?';
 const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Laos — Vientiane and Luang Prabang especially.';
 
@@ -219,13 +222,29 @@ function isPriceFollowUp(query) {
     return tokenize(text).some((token) => PRICE_QUALITY_CUES.has(token));
 }
 
+function isMoreFollowUp(query) {
+    const text = String(query || '');
+    if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
+    const tokens = tokenize(text);
+    if (!tokens.some((token) => MORE_FOLLOW_UP_CUES.has(token))) return false;
+    return isFollowUp(text);
+}
+
 function lastSpecifiedQuery(historyTurns) {
     for (let i = (historyTurns || []).length - 1; i >= 0; i--) {
         const turn = historyTurns[i];
+        // Amenity / price / "any others?" are refinements, not a new keyword search.
+        if (isAmenityFollowUp(turn) || isPriceFollowUp(turn) || isMoreFollowUp(turn)) continue;
         const parsed = parseSearchQuery(turn);
         if (!parsed.isEmpty) return String(turn || '').trim();
     }
     return '';
+}
+
+function moreFollowUpOffset(latest, historyTurns) {
+    if (!isMoreFollowUp(latest)) return 0;
+    const priorMores = (historyTurns || []).filter((turn) => isMoreFollowUp(turn)).length;
+    return (priorMores + 1) * CHAT_LISTING_LIMIT;
 }
 
 function needsCityClarify(query) {
@@ -494,7 +513,8 @@ async function handleChatRequest({
 
     const amenityFollowUp = isAmenityFollowUp(latest);
     const priceFollowUp = isPriceFollowUp(latest);
-    const keepPriorListings = (amenityFollowUp || priceFollowUp) && historyTurns.length > 0;
+    const moreFollowUp = isMoreFollowUp(latest);
+    const keepPriorListings = (amenityFollowUp || priceFollowUp || moreFollowUp) && historyTurns.length > 0;
     let query = searchQueryFromMessages(normalized.messages);
     if (keepPriorListings) {
         const prior = lastSpecifiedQuery(historyTurns);
@@ -526,8 +546,12 @@ async function handleChatRequest({
         }
     }
 
-    const truncated = all.length > CHAT_LISTING_LIMIT;
-    const listings = all.slice(0, CHAT_LISTING_LIMIT).map(publicListing).filter(Boolean);
+    const offset = moreFollowUp ? moreFollowUpOffset(latest, historyTurns) : 0;
+    const pageRows = all.slice(offset, offset + CHAT_LISTING_LIMIT);
+    const noMoreInCity = moreFollowUp && !pageRows.length;
+    const shown = noMoreInCity ? all.slice(0, CHAT_LISTING_LIMIT) : pageRows;
+    const truncated = !moreFollowUp && all.length > CHAT_LISTING_LIMIT;
+    const listings = shown.map(publicListing).filter(Boolean);
     const modelListings = listings.map(listingForModel).filter(Boolean);
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
@@ -535,9 +559,11 @@ async function handleChatRequest({
         ? MISSING_PRICE_REPLY
         : (amenityFollowUp
             ? MISSING_AMENITY_REPLY
-            : (!listings.length && mentionsOutsideCoverage(query || latest)
-                ? OUTSIDE_COVERAGE_REPLY
-                : template.reply));
+            : (noMoreInCity
+                ? NO_MORE_REPLY
+                : (!listings.length && mentionsOutsideCoverage(query || latest)
+                    ? OUTSIDE_COVERAGE_REPLY
+                    : template.reply)));
 
     const respond = (mode, reply) => {
         const spoken = sanitizeSpokenReply(reply, modelListings);
@@ -549,7 +575,7 @@ async function handleChatRequest({
                 mode,
                 reply: spoken,
                 listings,
-                chips: template.chips,
+                chips: Array.from(new Set(template.chips || [])),
                 query
             }
         };
@@ -585,6 +611,7 @@ module.exports = {
     SYSTEM_PROMPT_TEXT,
     AMENITY_QUALITY_CUES,
     PRICE_QUALITY_CUES,
+    MORE_FOLLOW_UP_CUES,
     getChatApiKey,
     getChatModel,
     sanitizeErrorMessage,
@@ -601,7 +628,9 @@ module.exports = {
     searchQueryFromMessages,
     isAmenityFollowUp,
     isPriceFollowUp,
+    isMoreFollowUp,
     lastSpecifiedQuery,
+    moreFollowUpOffset,
     needsCityClarify,
     requestedStrictCopyTokens,
     isGreetingTurn,
@@ -615,6 +644,7 @@ module.exports = {
     NEED_CLARIFY_REPLY,
     MISSING_AMENITY_REPLY,
     MISSING_PRICE_REPLY,
+    NO_MORE_REPLY,
     CITY_CLARIFY_REPLY,
     OUTSIDE_COVERAGE_REPLY,
     VAGUE_NEED_TOKENS,

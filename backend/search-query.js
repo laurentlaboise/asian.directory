@@ -72,7 +72,7 @@ const FOLLOW_UP_CUES = new Set([
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
     'reviews', 'review', 'laptop', 'laptops',
     'ones', 'family', 'families', 'kids', 'children',
-    'price', 'prices'
+    'price', 'prices', 'parking'
 ]);
 
 const {
@@ -150,6 +150,7 @@ const CATEGORY_PHRASES = {
     lawyers: 'lawyer matches',
     law: 'lawyer matches',
     construction: 'construction matches',
+    stay: 'stay matches',
     travel: 'travel matches'
 };
 
@@ -167,11 +168,11 @@ const PLACE_WORDS = new Set([
 // name/category; demote industrial rows only for consumer place-words.
 const CONSUMER_INTENTS = new Set([
     'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
-    'hotel', 'hotels', 'eat', 'food', 'lawyer'
+    'hotel', 'hotels', 'stay', 'eat', 'food', 'lawyer'
 ]);
 const CONSUMER_PLACE_WORDS = new Set([
     'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
-    'hotel', 'hotels', 'food'
+    'hotel', 'hotels', 'stay', 'food'
 ]);
 const CONSUMER_SIGNALS = [
     'coffee shop', 'coffee house', 'cafe', 'café', 'restaurant',
@@ -308,8 +309,13 @@ function nextRetryQuery(parsed) {
             isEmpty: false
         };
     }
-    // Category + city is a specific ask. Do not drop Luang Prabang for hotels.
+    // Category + city is a specific ask. Do not drop Luang Prabang / Vang Vieng.
     if (categoryTerms.length && locationContent.length) {
+        return null;
+    }
+    // A named city stays required. Retrying "stay" alone dumped Vientiane hotels
+    // whose descriptions mentioned Vang Vieng.
+    if (locationContent.length) {
         return null;
     }
 
@@ -466,6 +472,11 @@ function isFollowUp(query) {
     return onlyLocation && tokens.length <= 5;
 }
 
+function isAmenityCarryTerm(term) {
+    const key = String(term || '').toLowerCase();
+    return STRICT_COPY_TOKENS.has(key) || FOLLOW_UP_CUES.has(key);
+}
+
 function extractCityAndCategory(turns) {
     const cities = [];
     const categories = [];
@@ -474,6 +485,8 @@ function extractCityAndCategory(turns) {
         for (const term of parsed.contentTerms) {
             if (LOCATION_HINTS.has(term)) {
                 if (!cities.includes(term)) cities.push(term);
+            } else if (isAmenityCarryTerm(term)) {
+                continue;
             } else if (!categories.includes(term)) {
                 categories.push(term);
             }
@@ -617,11 +630,20 @@ function rowMatchesCopyTokens(business, parsed) {
     });
 }
 
+function listingCityLocationText(business) {
+    // City honesty: city field, name, or address. Description mentions do not count.
+    return [
+        haystack(business && business.city),
+        haystack(business && business.name),
+        haystack(business && business.address)
+    ].join(' ');
+}
+
 function rowMatchesQueryCity(business, parsed) {
     const terms = (parsed && parsed.contentTerms) || [];
     const cityHints = terms.filter((term) => LOCATION_HINTS.has(term) && !COUNTRY_GENERICS[term]);
     if (!cityHints.length) return true;
-    const blob = `${haystack(business && business.city)} ${haystack(business && business.address)}`;
+    const blob = listingCityLocationText(business);
     if (cityHints.includes('luang') && cityHints.includes('prabang')) {
         return blob.includes('luang') && blob.includes('prabang');
     }
@@ -632,6 +654,28 @@ function rowMatchesQueryCity(business, parsed) {
         return blob.includes('kuala') && blob.includes('lumpur');
     }
     return cityHints.every((hint) => blob.includes(hint));
+}
+
+/**
+ * If every remaining row.city is a different town than the one asked for,
+ * drop the set. Name/address may keep a row through rowMatchesQueryCity;
+ * a Vientiane-only city field must not be sold as Vang Vieng.
+ */
+function dropMismatchedRequestedCity(rows, parsed) {
+    const list = rows || [];
+    const requested = cityFromTerms((parsed && parsed.contentTerms) || []);
+    if (!requested || !list.length) return list;
+    const needle = requested.toLowerCase();
+    const hasRequestedCityField = list.some((row) => {
+        const city = String((row && row.city) || '').toLowerCase();
+        return city.includes(needle);
+    });
+    if (hasRequestedCityField) return list;
+    const allHaveOtherCity = list.every((row) => {
+        const city = String((row && row.city) || '').trim();
+        return city && !city.toLowerCase().includes(needle);
+    });
+    return allHaveOtherCity ? [] : list;
 }
 
 function decodeListingFields(business) {
@@ -722,7 +766,7 @@ function scoreBusiness(business, parsed) {
 
 function rankBusinesses(businesses, parsed) {
     const constraint = namedCategoryConstraint((parsed && parsed.contentTerms) || []);
-    return (businesses || [])
+    const ranked = (businesses || [])
         .filter((business) => (
             rowMatchesCuisinePlace(business, parsed)
             && rowMatchesCopyTokens(business, parsed)
@@ -741,6 +785,7 @@ function rankBusinesses(businesses, parsed) {
             return a.index - b.index;
         })
         .map((row) => row.business);
+    return dropMismatchedRequestedCity(ranked, parsed);
 }
 
 function buildContentSearchSql(parsed, dialect = 'pg') {
@@ -862,7 +907,12 @@ function buildAssistantLine({ query, parsed, results, truncated, retried, emptyR
 
     const terms = (parsed && parsed.contentTerms) || parseSearchQuery(query).contentTerms;
     const category = categoryPhrase(terms, list);
-    const city = cityFromTerms(terms) || dominantCityName(list);
+    const requestedCity = cityFromTerms(terms);
+    const requestedCityOnRows = requestedCity && list.some((row) => {
+        const city = String((row && row.city) || '').toLowerCase();
+        return city.includes(requestedCity.toLowerCase());
+    });
+    const city = requestedCityOnRows ? requestedCity : dominantCityName(list);
 
     if (category && city) return `Here are ${category} in ${city}.`;
     if (category) return `Here are ${category}.`;
@@ -871,10 +921,18 @@ function buildAssistantLine({ query, parsed, results, truncated, retried, emptyR
     return WEAK_LINE;
 }
 
+function uniqueChips(list) {
+    const out = [];
+    for (const chip of list || []) {
+        if (chip && !out.includes(chip)) out.push(chip);
+    }
+    return out;
+}
+
 function buildFollowUpChips({ parsed, results }) {
     const terms = (parsed && parsed.contentTerms) || [];
     const category = terms.find((term) => (
-        !LOCATION_HINTS.has(term) && !STRICT_COPY_TOKENS.has(term)
+        !LOCATION_HINTS.has(term) && !STRICT_COPY_TOKENS.has(term) && !FOLLOW_UP_CUES.has(term)
     )) || '';
     const hasCity = terms.some((term) => LOCATION_HINTS.has(term));
     const chips = [];
@@ -896,8 +954,11 @@ function buildFollowUpChips({ parsed, results }) {
             if (city) chips.push(`In ${city}?`);
             else chips.push('Which city?');
         }
-        if (category === 'hotel' || category === 'hotels') chips.push('Coffee instead?');
-        else if (category) chips.push('In Vientiane?');
+        if (category === 'hotel' || category === 'hotels' || category === 'stay') {
+            chips.push('Coffee instead?');
+        } else if (category && !chips.some((chip) => /^In /i.test(chip))) {
+            chips.push('In Vientiane?');
+        }
     }
 
     if ((results || []).length) {
@@ -907,7 +968,7 @@ function buildFollowUpChips({ parsed, results }) {
         chips.push('Any others?');
     }
 
-    return chips.slice(0, 3);
+    return uniqueChips(chips).slice(0, 3);
 }
 
 module.exports = {
@@ -947,12 +1008,15 @@ module.exports = {
     scoreBusiness,
     rankBusinesses,
     rowMatchesQueryCity,
+    dropMismatchedRequestedCity,
+    listingCityLocationText,
     namedCategoryConstraint,
     isCategoryToken,
     rowMatchesNamedCategory,
     buildContentSearchSql,
     buildAssistantLine,
     buildFollowUpChips,
+    uniqueChips,
     mergeCopyPhrases,
     rowMatchesCopyTokens,
     SEARCHABLE_COPY_TOKENS,

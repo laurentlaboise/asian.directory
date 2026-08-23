@@ -140,6 +140,7 @@ const QUERY_PARENTS = {
     hotel: 'hotels_travel',
     hotels: 'hotels_travel',
     hostel: 'hotels_travel',
+    stay: 'hotels_travel',
     travel: 'hotels_travel',
     lawyer: 'legal_professional',
     lawyers: 'legal_professional',
@@ -271,6 +272,7 @@ const NAME_TOKEN_RULES = [
     { re: /\blegal\b/, sub: 'lawyer' },
     { re: /\bbanks?\b/, sub: 'bank' },
     { re: /\bschools?\b/, sub: 'school' },
+    { re: /\b(fitness|gym)\b/, sub: 'fitness' },
     { re: /\b(construction|contractor)\b/, sub: 'contractor' },
     { re: /\bfactory\b/, sub: 'factory' }
 ];
@@ -394,6 +396,7 @@ const LAWYER_SUBS = new Set(['lawyer']);
 const NAMED_CATEGORY_TOKENS = {
     hotel: { primary: 'hotels_travel', subs: HOTEL_SUBS },
     hotels: { primary: 'hotels_travel', subs: HOTEL_SUBS },
+    stay: { primary: 'hotels_travel', subs: HOTEL_SUBS },
     lawyer: { primary: 'legal_professional', subs: LAWYER_SUBS },
     lawyers: { primary: 'legal_professional', subs: LAWYER_SUBS },
     law: { primary: 'legal_professional', subs: LAWYER_SUBS },
@@ -448,6 +451,9 @@ function rowMatchesNamedCategory(row, constraint) {
     }
 
     if (constraint.primary === 'construction') {
+        // Name-token only: a Fitness/Gym name is not a construction match
+        // even when the stored category says Construction.
+        if (/\b(fitness|gym)\b/.test(nameHay(row))) return false;
         if (mapped.primary === 'construction' || CONSTRUCTION_SUBS.has(mapped.sub)) return true;
         return /\b(construction|contractor|builder|scaffolding)\b/.test(face);
     }
