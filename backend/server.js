@@ -10,6 +10,7 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const packageJson = require('./package.json');
+const { reformulateWithHistory, parseHistoryParam } = require('./search-query');
 
 // ---------------------------------------------------------------------------
 // Database auto-detection: PostgreSQL when DATABASE_URL is set, else SQLite
@@ -991,9 +992,11 @@ app.get('/api/businesses/export', authenticateToken, async (req, res) => {
 });
 
 // Public search — always active listings. status= query param is ignored.
+// Optional history= (JSON array or pipe-delimited last user turns) merges follow-ups.
 app.get('/api/businesses/search', async (req, res) => {
     try {
-        const query = req.query.q || '';
+        const rawQuery = req.query.q || '';
+        const query = reformulateWithHistory(rawQuery, parseHistoryParam(req.query.history));
         const results = await dbOperations.searchBusinesses(query);
         res.json({ success: true, data: results, query });
     } catch (error) {
@@ -2081,11 +2084,12 @@ app.get('/api/v1/businesses', apiKeyLimiter, authenticateApiKey, async (req, res
 
 app.get('/api/v1/businesses/search', apiKeyLimiter, authenticateApiKey, async (req, res) => {
     try {
-        const query = req.query.q || '';
-        if (!query.trim()) {
+        const rawQuery = req.query.q || '';
+        if (!String(rawQuery).trim()) {
             return res.status(400).json({ success: false, error: 'Search query (q) is required' });
         }
 
+        const query = reformulateWithHistory(rawQuery, parseHistoryParam(req.query.history));
         const results = await dbOperations.searchBusinesses(query);
         res.json({
             success: true,

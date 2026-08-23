@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
-const { parseSearchQuery, buildContentSearchSql, rankBusinesses } = require('./search-query');
+const { parseSearchQuery, buildContentSearchSql, rankBusinesses, nextRetryQuery, decodeMojibake } = require('./search-query');
 
 // ---------------------------------------------------------------------------
 // PostgreSQL connection pool
@@ -463,6 +463,10 @@ function parseBusiness(business) {
     if (!business) return null;
     return {
         ...business,
+        name: decodeMojibake(business.name),
+        category: decodeMojibake(business.category),
+        description: decodeMojibake(business.description),
+        address: decodeMojibake(business.address),
         socials: typeof business.socials === 'string' ? JSON.parse(business.socials) : (business.socials || {}),
         keywords: typeof business.keywords === 'string' ? JSON.parse(business.keywords) : (business.keywords || []),
         custom_fields: typeof business.custom_fields === 'string' ? JSON.parse(business.custom_fields) : (business.custom_fields || {}),
@@ -506,12 +510,18 @@ const dbOperations = {
 
     // Public search is always active-only. See search-query.js for AND + ranking.
     searchBusinesses: async (query) => {
-        const parsed = parseSearchQuery(query);
-        const { sql, params } = buildContentSearchSql(parsed, 'pg');
-        if (!sql) return [];
+        const run = async (parsed) => {
+            const { sql, params } = buildContentSearchSql(parsed, 'pg');
+            if (!sql) return [];
+            const result = await pool.query(sql, params);
+            return rankBusinesses(result.rows.map(parseBusiness), parsed);
+        };
 
-        const result = await pool.query(sql, params);
-        return rankBusinesses(result.rows.map(parseBusiness), parsed);
+        const parsed = parseSearchQuery(query);
+        const first = await run(parsed);
+        if (first.length) return first;
+        const retry = nextRetryQuery(parsed);
+        return retry ? run(retry) : first;
     },
 
     getBusinessById: async (id) => {

@@ -15,7 +15,7 @@ try {
 
 const path = require('path');
 const crypto = require('crypto');
-const { parseSearchQuery, buildContentSearchSql, rankBusinesses } = require('./search-query');
+const { parseSearchQuery, buildContentSearchSql, rankBusinesses, nextRetryQuery, decodeMojibake } = require('./search-query');
 
 // Initialize database
 const db = new Database(path.join(__dirname, 'asian-directory.db'));
@@ -353,6 +353,10 @@ function parseBusiness(business) {
     if (!business) return null;
     return {
         ...business,
+        name: decodeMojibake(business.name),
+        category: decodeMojibake(business.category),
+        description: decodeMojibake(business.description),
+        address: decodeMojibake(business.address),
         socials: business.socials ? JSON.parse(business.socials) : {},
         keywords: business.keywords ? JSON.parse(business.keywords) : [],
         custom_fields: business.custom_fields ? JSON.parse(business.custom_fields) : {},
@@ -418,13 +422,18 @@ const dbOperations = {
 
     // Public search is always active-only. See search-query.js for AND + ranking.
     searchBusinesses: (query) => {
-        const parsed = parseSearchQuery(query);
-        const { sql, params } = buildContentSearchSql(parsed, 'sqlite');
-        if (!sql) return [];
+        const run = (parsed) => {
+            const { sql, params } = buildContentSearchSql(parsed, 'sqlite');
+            if (!sql) return [];
+            const stmt = db.prepare(sql);
+            return rankBusinesses(stmt.all(...params).map(parseBusiness), parsed);
+        };
 
-        const stmt = db.prepare(sql);
-        const businesses = stmt.all(...params);
-        return rankBusinesses(businesses.map(parseBusiness), parsed);
+        const parsed = parseSearchQuery(query);
+        const first = run(parsed);
+        if (first.length) return first;
+        const retry = nextRetryQuery(parsed);
+        return retry ? run(retry) : first;
     },
 
     getBusinessById: (id) => {
