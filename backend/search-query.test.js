@@ -289,6 +289,17 @@ const DELUXE_SUPERMARKET = {
     is_featured: false
 };
 
+// Test double only: construction copy, not used to invent listings.
+const CONSTRUCTION_DOUBLE = {
+    id: 2,
+    name: 'Mohona Construction Company Limited',
+    category: 'Construction company',
+    description: 'A construction company in Vientiane.',
+    city: 'Vientiane',
+    country: 'LA',
+    status: 'active'
+};
+
 // Test double only: a row that already contains "japanese" in catalog text.
 // Not a live sushi listing and not added to any database.
 const ROW_WITH_JAPANESE = {
@@ -392,8 +403,8 @@ test('conversational prompts drop leftover tokens that are not in listing text',
     assert.deepEqual(parseSearchQuery('best coffee places').contentTerms, ['coffee']);
     assert.deepEqual(parseSearchQuery('Find a good coffee shop in Vientiane').contentTerms, ['coffee', 'vientiane']);
     assert.deepEqual(parseSearchQuery('I need a lawyer').contentTerms, ['lawyer']);
-    assert.deepEqual(parseSearchQuery('which is good for working?').contentTerms, []);
-    assert.deepEqual(parseSearchQuery('do they have wifi?').contentTerms, []);
+    assert.deepEqual(parseSearchQuery('which is good for working?').contentTerms, ['working']);
+    assert.deepEqual(parseSearchQuery('do they have wifi?').contentTerms, ['wifi']);
     assert.equal(parseSearchQuery('hello').isEmpty, true);
     assert.equal(parseSearchQuery('hi').isEmpty, true);
     assert.equal(parseSearchQuery('hey please').isEmpty, true);
@@ -690,4 +701,114 @@ test('hotel queries demote Hotel and Restaurant Association below actual hotels'
     assert.ok(scoreBusiness(VILLA_MALY_HOTEL, parsed) > scoreBusiness(HOTEL_ASSOCIATION, parsed));
     assert.equal(HOTEL_ASSOCIATION.category, 'Association');
     assert.equal(SALANA_HOTEL.category, 'tourism');
+});
+
+test('copy-token keywords boost chinese+developer and filter wifi / apartment rental', () => {
+    const taggedDeveloper = {
+        id: 9001,
+        name: 'Catalog construction developer',
+        category: 'construction',
+        description: 'Chinese construction developer',
+        address: 'Vientiane, Lao PDR',
+        country: 'LA',
+        city: 'Vientiane',
+        keywords: ['chinese', 'construction', 'developer'],
+        status: 'active',
+        is_featured: false
+    };
+    const untaggedConstruction = {
+        ...CONSTRUCTION_DOUBLE,
+        id: 9002,
+        keywords: []
+    };
+    const parsed = parseSearchQuery('chinese developer');
+    assert.deepEqual(parsed.contentTerms, ['chinese', 'developer']);
+    assert.equal(nextRetryQuery(parsed), null);
+
+    const ranked = rankBusinesses([untaggedConstruction, taggedDeveloper], parsed);
+    assert.deepEqual(ranked.map((row) => row.id), [9001]);
+    assert.ok(scoreBusiness(taggedDeveloper, parsed) > scoreBusiness(untaggedConstruction, parsed));
+
+    const wifiCafe = {
+        id: 9003,
+        name: 'Catalog cafe with wifi word',
+        category: 'cafe',
+        description: 'A cafe with wifi.',
+        city: 'Vientiane',
+        country: 'LA',
+        keywords: ['cafe', 'wifi'],
+        status: 'active'
+    };
+    const cafeNoWifi = {
+        id: 9004,
+        name: 'Catalog cafe without that word',
+        category: 'cafe',
+        description: 'A neighborhood cafe.',
+        city: 'Vientiane',
+        country: 'LA',
+        keywords: ['cafe'],
+        status: 'active'
+    };
+    const wifiParsed = parseSearchQuery('wifi cafe');
+    assert.ok(wifiParsed.contentTerms.includes('wifi'));
+    const wifiRanked = rankBusinesses([cafeNoWifi, wifiCafe], wifiParsed);
+    assert.deepEqual(wifiRanked.map((row) => row.id), [9003]);
+
+    const rental = {
+        id: 9005,
+        name: 'Catalog apartment rental',
+        category: 'rental',
+        description: 'Apartment rental listing.',
+        city: 'Vientiane',
+        country: 'LA',
+        keywords: ['apartment', 'rental'],
+        status: 'active'
+    };
+    const rentalParsed = parseSearchQuery('apartment rental');
+    assert.deepEqual(rentalParsed.contentTerms, ['apartment', 'rental']);
+    assert.deepEqual(rankBusinesses([cafeNoWifi, rental], rentalParsed).map((row) => row.id), [9005]);
+});
+
+test('currently building does not dump construction firms; missing wifi is empty', () => {
+    const construction = {
+        id: 9006,
+        name: 'Mohona Construction Company Limited',
+        category: 'construction',
+        description: 'A construction company in Vientiane.',
+        city: 'Vientiane',
+        country: 'LA',
+        keywords: ['construction'],
+        status: 'active'
+    };
+    const currently = {
+        id: 9007,
+        name: 'Catalog site notice',
+        category: 'construction',
+        description: 'Currently building a hotel.',
+        city: 'Vientiane',
+        country: 'LA',
+        keywords: ['currently building', 'building', 'hotel', 'construction'],
+        status: 'active'
+    };
+
+    const parsed = parseSearchQuery('currently building');
+    assert.deepEqual(parsed.contentTerms, ['currently building']);
+    assert.equal(nextRetryQuery({ ...parsed, contentTerms: ['currently building', 'vientiane'] }), null);
+
+    const sql = buildContentSearchSql(parsed, 'pg');
+    assert.deepEqual(sql.params, ['%currently building%']);
+    assert.doesNotMatch(sql.sql, /%building%/);
+
+    const ranked = rankBusinesses([construction, currently], parsed);
+    assert.deepEqual(ranked.map((row) => row.id), [9007]);
+    assert.equal(ranked.some((row) => row.id === 9006), false);
+
+    const wifiOnly = parseSearchQuery('do they have wifi?');
+    assert.deepEqual(wifiOnly.contentTerms, ['wifi']);
+    assert.deepEqual(rankBusinesses([construction, HIGHLAND_GARDEN, VANMAI_COFFEE], wifiOnly), []);
+    assert.equal(buildAssistantLine({
+        query: 'do they have wifi?',
+        parsed: wifiOnly,
+        results: []
+    }), EMPTY_LINE);
 });

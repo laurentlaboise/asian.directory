@@ -27,6 +27,10 @@
  *     on the row; food_drink/hotels_travel/legal beat industry parents
  *   - merges the last few user turns when the new message is a short follow-up
  *     (cheaper / wifi / working / "in Vientiane only")
+ *   - copy-tokens (Sage / Laurent 23 Aug): if keywords exist, boost/filter
+ *     when the query contains that exact token (chinese + developer, wifi,
+ *     apartment rental). Missing tokens stay honest-empty — "currently
+ *     building" does not dump construction firms
  *
  * Public search stays status='active'. Location-only queries (just "laos")
  * and greetings return no SQL so they cannot dump the catalog.
@@ -47,10 +51,11 @@ const STOPWORDS = new Set([
     'business', 'businesses',
     // Vague / junk tokens. Do not AND these into SQL or treat them as a category.
     'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help',
-    // Amenity / quality follow-ups. They refine a prior city+category; they are
-    // not listing text and must not AND into SQL (wifi/working would zero the set).
-    'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
-    'reviews', 'review', 'laptop', 'laptops'
+    // Amenity / quality follow-ups that are still not listing text.
+    // wifi / working / laptop are copy-tokens: if the word was copied into
+    // keywords they AND and filter. hours/reviews stay stopwords.
+    'work', 'hours', 'which', 'they', 'have', 'only',
+    'reviews', 'review'
 ]);
 
 const GREETINGS = new Set(['hello', 'hi', 'hey']);
@@ -61,6 +66,16 @@ const FOLLOW_UP_CUES = new Set([
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
     'reviews', 'review', 'laptop', 'laptops'
 ]);
+
+const {
+    SEARCHABLE_COPY_TOKENS,
+    STRICT_COPY_TOKENS,
+    copyTokensInText,
+    keywordHasToken,
+    rowHasCopyToken
+} = require('./copy-tokens');
+
+const KEYWORD_TOKEN_BOOST = 40;
 
 // Tokens that match almost the entire LA catalog via description/address text.
 const COUNTRY_GENERICS = {
@@ -256,6 +271,12 @@ function nextRetryQuery(parsed) {
         };
     }
 
+    // Copy-tokens are exact filters (wifi, currently building, chinese).
+    // Do not retry by dropping them — that dumped construction firms.
+    if ((parsed.contentTerms || []).some((term) => SEARCHABLE_COPY_TOKENS.has(term))) {
+        return null;
+    }
+
     const contentTerms = strongestContentTerms(parsed.contentTerms);
     if (!contentTerms.length) return null;
     if (
@@ -338,12 +359,45 @@ function parseSearchQuery(query) {
         };
     }
 
+    const merged = mergeCopyPhrases(contentTerms, query);
     return {
-        contentTerms,
+        contentTerms: merged,
         locationTerms,
-        isEmpty: contentTerms.length === 0,
-        isLocationOnly: contentTerms.length === 0 && locationTerms.length > 0
+        isEmpty: merged.length === 0,
+        isLocationOnly: merged.length === 0 && locationTerms.length > 0
     };
+}
+
+/**
+ * Keep "currently building" and "wi-fi" as one token so they cannot
+ * split into building / wi / fi and dump unrelated rows.
+ */
+function mergeCopyPhrases(contentTerms, query) {
+    const phrases = copyTokensInText(query).filter((token) => (
+        token.includes(' ') || token.includes('-')
+    ));
+    const terms = [];
+    const seen = new Set();
+    const drop = new Set();
+    if (phrases.includes('currently building')) {
+        drop.add('currently');
+        drop.add('building');
+    }
+    if (phrases.includes('wi-fi')) {
+        drop.add('wi');
+        drop.add('fi');
+    }
+    for (const term of contentTerms || []) {
+        if (drop.has(term) || seen.has(term)) continue;
+        seen.add(term);
+        terms.push(term);
+    }
+    for (const phrase of phrases) {
+        if (seen.has(phrase)) continue;
+        seen.add(phrase);
+        terms.push(phrase);
+    }
+    return terms;
 }
 
 function isGreeting(query) {
@@ -510,6 +564,18 @@ function rowMatchesCuisinePlace(business, parsed) {
     return required.every((term) => text.includes(term));
 }
 
+function rowMatchesCopyTokens(business, parsed) {
+    const terms = (parsed && parsed.contentTerms) || [];
+    const required = terms.filter((term) => SEARCHABLE_COPY_TOKENS.has(term));
+    if (!required.length) return true;
+    const text = listingMatchText(business);
+    return required.every((term) => {
+        if (rowHasCopyToken(business, term)) return true;
+        if (STRICT_COPY_TOKENS.has(term)) return false;
+        return termAliases(term).some((alias) => text.includes(alias));
+    });
+}
+
 function decodeListingFields(business) {
     if (!business || typeof business !== 'object') return business;
     const out = { ...business };
@@ -551,6 +617,7 @@ function scoreBusiness(business, parsed) {
 
         // Brand-leading descriptions ("ANZ is the first…") should beat a stray address hit.
         if (aliases.some((alias) => description.startsWith(alias))) score += 40;
+        if (keywordHasToken(business, term)) score += KEYWORD_TOKEN_BOOST;
     }
 
     for (const loc of parsed.locationTerms) {
@@ -597,7 +664,9 @@ function scoreBusiness(business, parsed) {
 
 function rankBusinesses(businesses, parsed) {
     return (businesses || [])
-        .filter((business) => rowMatchesCuisinePlace(business, parsed))
+        .filter((business) => (
+            rowMatchesCuisinePlace(business, parsed) && rowMatchesCopyTokens(business, parsed)
+        ))
         .map((business, index) => ({
             business: decodeListingFields(business),
             index,
@@ -677,6 +746,7 @@ function displayCity(term) {
 function categoryPhrase(terms) {
     for (const term of terms || []) {
         if (LOCATION_HINTS.has(term)) continue;
+        if (STRICT_COPY_TOKENS.has(term)) continue;
         if (CATEGORY_PHRASES[term]) return CATEGORY_PHRASES[term];
         return `${term} matches`;
     }
@@ -736,7 +806,9 @@ function buildAssistantLine({ query, parsed, results, truncated, retried, emptyR
 
 function buildFollowUpChips({ parsed, results }) {
     const terms = (parsed && parsed.contentTerms) || [];
-    const category = terms.find((term) => !LOCATION_HINTS.has(term)) || '';
+    const category = terms.find((term) => (
+        !LOCATION_HINTS.has(term) && !STRICT_COPY_TOKENS.has(term)
+    )) || '';
     const hasCity = terms.some((term) => LOCATION_HINTS.has(term));
     const chips = [];
 
@@ -799,5 +871,10 @@ module.exports = {
     rankBusinesses,
     buildContentSearchSql,
     buildAssistantLine,
-    buildFollowUpChips
+    buildFollowUpChips,
+    mergeCopyPhrases,
+    rowMatchesCopyTokens,
+    SEARCHABLE_COPY_TOKENS,
+    STRICT_COPY_TOKENS,
+    KEYWORD_TOKEN_BOOST
 };

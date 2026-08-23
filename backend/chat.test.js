@@ -287,14 +287,11 @@ test('with a key, Grok reply is used and the key is never returned', async () =>
 });
 
 test('amenity follow-ups stay search mode even when XAI_API_KEY is set', async () => {
-    const prompts = [
-        'which is good for working?',
-        'do they have wifi?',
+    const honestyWithCards = [
         'what are the hours?',
-        'any reviews?',
-        'good for laptop?'
+        'any reviews?'
     ];
-    for (const latest of prompts) {
+    for (const latest of honestyWithCards) {
         let called = false;
         const result = await handleChatRequest({
             messages: [
@@ -321,6 +318,59 @@ test('amenity follow-ups stay search mode even when XAI_API_KEY is set', async (
         assert.doesNotMatch(result.body.reply, /@|\+856/);
         assert.ok(!JSON.stringify(result.body).includes('xai-secret-test-key'));
     }
+});
+
+test('copy-token amenity with no tagged row is honest empty; tagged wifi filters', async () => {
+    const missing = [
+        'which is good for working?',
+        'do they have wifi?',
+        'good for laptop?'
+    ];
+    for (const latest of missing) {
+        let called = false;
+        const result = await handleChatRequest({
+            messages: [
+                { role: 'user', content: 'best coffee places' },
+                { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+                { role: 'user', content: latest }
+            ],
+            env: { XAI_API_KEY: 'xai-secret-test-key' },
+            searchBusinesses: async () => [],
+            completeChat: async () => {
+                called = true;
+                return 'should not be used';
+            }
+        });
+        assert.equal(isAmenityFollowUp(latest), true, latest);
+        assert.equal(called, false, latest);
+        assert.equal(result.body.mode, 'search', latest);
+        assert.equal(result.body.reply, MISSING_AMENITY_REPLY, latest);
+        assert.deepEqual(result.body.listings, []);
+        assert.doesNotMatch(result.body.reply, /wifi|laptop-friendly|quieter/i);
+    }
+
+    const wifiRow = {
+        ...YUNI_COFFEE,
+        description: 'A cafe with wifi.',
+        keywords: ['cafe', 'wifi']
+    };
+    const hit = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'best coffee places' },
+            { role: 'user', content: 'do they have wifi?' }
+        ],
+        env: { XAI_API_KEY: 'xai-secret-test-key' },
+        searchBusinesses: async (query) => {
+            assert.match(query, /wifi/i);
+            return [wifiRow];
+        },
+        completeChat: async () => 'should not be used'
+    });
+    assert.equal(hit.body.mode, 'search');
+    assert.equal(hit.body.listings.length, 1);
+    assert.notEqual(hit.body.reply, MISSING_AMENITY_REPLY);
+    assert.equal(hit.body.listings[0].keywords, undefined);
+    assert.doesNotMatch(JSON.stringify(hit.body.listings), /"keywords"/);
 });
 
 test('provider failure falls back to search mode instead of leaking the key', async () => {
