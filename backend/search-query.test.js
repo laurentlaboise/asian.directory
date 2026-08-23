@@ -77,6 +77,178 @@ const YUNI_COFFEE = {
     is_featured: false
 };
 
+// Live GET /api/businesses/search rows from 2026-08-23. Do not invent sushi listings.
+const ASTER_COFFEE_HOUSE = {
+    id: 71,
+    name: 'ASTER COFFEE HOUSE',
+    category: 'coffee shop',
+    description: 'ASTER COFFEE HOUSE is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const COMMA_COFFEE = {
+    id: 1658,
+    name: 'Comma Coffee',
+    category: 'Business Services',
+    description: 'Comma Coffee is a public listing in Vientiane.',
+    address: 'Vientiane, Laos',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const SAFFRON_COFFEE = {
+    id: 1666,
+    name: 'Saffron Coffee',
+    category: 'Business Services',
+    description: 'Saffron Coffee is a public listing in Vientiane.',
+    address: 'Vientiane, Laos',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const COFFEE_FIX = {
+    id: 128,
+    name: 'Coffee Fix',
+    category: 'Machineries & Tools',
+    description: 'Coffee Fix is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const MIRACLE_COFFEE_FACTORY = {
+    id: 398,
+    name: 'Miracle Lao Coffee Factory Sole Co.,Ltd',
+    category: 'Manufacture',
+    description: 'Miracle Lao Coffee Factory Sole Co.,Ltd is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const HIGHLAND_GARDEN = {
+    id: 206,
+    name: 'Highland Garden Restaurant Vientiane',
+    category: 'western restaurant',
+    description: 'Highland Garden Restaurant Vientiane is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const WAN_XIANG = {
+    id: 623,
+    name: 'Wan Xiang Chinese Restaurant Vientiane',
+    category: 'chinese restaurant',
+    description: 'Wan Xiang Chinese Restaurant Vientiane is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const FOODPANDA = {
+    id: 185,
+    name: 'Foodpanda - Delivery Hero (Lao) Sole Co. Ltd',
+    category: 'Food & Beverages',
+    description: 'Foodpanda is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const AENOTECA = {
+    id: 37,
+    name: 'AEnoteca',
+    category: 'Food & Beverages',
+    description: 'AEnoteca is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const STATE_FOOD_GARMENT = {
+    id: 976,
+    name: 'Vientiane State Food Enterprise',
+    category: 'Garment',
+    description: 'Vientiane State Food Enterprise is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const VIENTIANE_COLD_STORAGE = {
+    id: 607,
+    name: 'Vientiane Cold Storage Sole Co.,Ltd',
+    category: 'Trading and Service',
+    description: 'Vientiane Cold Storage Sole Co.,Ltd is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+const DELUXE_SUPERMARKET = {
+    id: 148,
+    name: 'Deluxe Frozen Food Supermarket',
+    category: 'importer',
+    description: 'Deluxe Frozen Food Supermarket is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
+// Test double only: a row that already contains "japanese" in catalog text.
+// Not a live sushi listing and not added to any database.
+const ROW_WITH_JAPANESE = {
+    id: 1,
+    name: 'Catalog restaurant mentioning japanese',
+    category: 'japanese restaurant',
+    description: 'Existing catalog text includes japanese.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    is_featured: false
+};
+
 test('drops stopwords and country-generic tokens from content AND', () => {
     const coffeeVte = parseSearchQuery('coffee in Vientiane');
     assert.deepEqual(coffeeVte.contentTerms, ['coffee', 'vientiane']);
@@ -292,4 +464,107 @@ test('follow-up chips after coffee point at Vientiane and hotels', () => {
     });
     assert.ok(chips.includes('In Vientiane?'));
     assert.ok(chips.includes('Hotels instead?'));
+});
+
+test('coffee ranks cafe names above factory and machineries', () => {
+    const parsed = parseSearchQuery('coffee');
+    const ranked = rankBusinesses(
+        [COFFEE_FIX, MIRACLE_COFFEE_FACTORY, ASTER_COFFEE_HOUSE, COMMA_COFFEE, SAFFRON_COFFEE],
+        parsed
+    );
+    const names = ranked.map((row) => row.name);
+    const cafeIds = ranked
+        .filter((row) => ['ASTER COFFEE HOUSE', 'Comma Coffee', 'Saffron Coffee'].includes(row.name))
+        .map((row) => row.id);
+    const factoryIdx = names.indexOf('Miracle Lao Coffee Factory Sole Co.,Ltd');
+    const machinesIdx = names.indexOf('Coffee Fix');
+
+    assert.deepEqual(ranked.slice(0, 3).map((row) => row.id).sort(), cafeIds.slice().sort());
+    assert.ok(names.indexOf('ASTER COFFEE HOUSE') < factoryIdx);
+    assert.ok(names.indexOf('Comma Coffee') < factoryIdx);
+    assert.ok(names.indexOf('Saffron Coffee') < factoryIdx);
+    assert.ok(names.indexOf('ASTER COFFEE HOUSE') < machinesIdx);
+    assert.ok(names.indexOf('Comma Coffee') < machinesIdx);
+    assert.ok(factoryIdx !== -1 && machinesIdx !== -1, 'factories still match, just later');
+    assert.ok(scoreBusiness(ASTER_COFFEE_HOUSE, parsed) > scoreBusiness(COFFEE_FIX, parsed));
+    assert.ok(scoreBusiness(COMMA_COFFEE, parsed) > scoreBusiness(MIRACLE_COFFEE_FACTORY, parsed));
+});
+
+test('japanese restaurant stays AND and does not return a western-only restaurant', async () => {
+    const parsed = parseSearchQuery('japanese restaurant');
+    assert.deepEqual(parsed.contentTerms, ['japanese', 'restaurant']);
+    assert.equal(nextRetryQuery(parsed), null);
+    assert.deepEqual(parseSearchQuery('lao restaurant').contentTerms, ['lao', 'restaurant']);
+    assert.equal(nextRetryQuery(parseSearchQuery('sushi restaurant')), null);
+
+    const sql = buildContentSearchSql(parsed, 'pg');
+    assert.deepEqual(sql.params, ['%japanese%', '%restaurant%']);
+    assert.match(sql.sql, / AND /);
+    assert.doesNotMatch(sql.sql, /\) OR \(/);
+
+    const ranked = rankBusinesses([HIGHLAND_GARDEN, WAN_XIANG], parsed);
+    assert.deepEqual(ranked, []);
+    assert.equal(ranked.some((row) => row.id === 206), false);
+
+    const withJapanese = rankBusinesses([HIGHLAND_GARDEN, ROW_WITH_JAPANESE, WAN_XIANG], parsed);
+    assert.deepEqual(withJapanese.map((row) => row.id), [1]);
+    assert.ok(withJapanese[0].category.includes('japanese'));
+
+    const calls = [];
+    const { results, retried } = await searchWithRetry('japanese restaurant', async (plan) => {
+        calls.push(plan.contentTerms.slice());
+        if (plan.contentTerms.length === 1 && plan.contentTerms[0] === 'restaurant') {
+            return [HIGHLAND_GARDEN];
+        }
+        return [];
+    });
+    assert.equal(retried, false);
+    assert.deepEqual(calls, [['japanese', 'restaurant']]);
+    assert.deepEqual(results, []);
+});
+
+test('food in Vientiane prefers Food & Beverages over Garment and Cold Storage', () => {
+    const parsed = parseSearchQuery('food in Vientiane');
+    assert.deepEqual(parsed.contentTerms, ['food', 'vientiane']);
+
+    const ranked = rankBusinesses(
+        [STATE_FOOD_GARMENT, VIENTIANE_COLD_STORAGE, FOODPANDA, AENOTECA, DELUXE_SUPERMARKET],
+        parsed
+    );
+    const names = ranked.map((row) => row.name);
+    const preferred = ['Foodpanda - Delivery Hero (Lao) Sole Co. Ltd', 'AEnoteca', 'Deluxe Frozen Food Supermarket'];
+    const lastPreferred = Math.max(...preferred.map((name) => names.indexOf(name)));
+    assert.ok(lastPreferred !== -1);
+    assert.ok(lastPreferred < names.indexOf('Vientiane State Food Enterprise'));
+    assert.ok(lastPreferred < names.indexOf('Vientiane Cold Storage Sole Co.,Ltd'));
+    assert.ok(names.includes('Vientiane State Food Enterprise'));
+});
+
+test('hungry stays empty for search; hello still does not search', () => {
+    assert.deepEqual(parseSearchQuery("I'm hungry").contentTerms, []);
+    assert.equal(parseSearchQuery("I'm hungry").isEmpty, true);
+    assert.equal(buildContentSearchSql(parseSearchQuery("I'm hungry"), 'pg').sql, null);
+    assert.equal(parseSearchQuery('hello').isEmpty, true);
+    assert.deepEqual(parseSearchQuery('what should I eat?').contentTerms, []);
+});
+
+test('search payload decodes mojibake on listing name and description', () => {
+    const smashed = 'CafÃ© Sinouk';
+    const ranked = rankBusinesses(
+        [{
+            id: 917,
+            name: smashed,
+            category: 'Manufacture',
+            description: 'CafÃ© in Vientiane',
+            address: 'Vientiane, Lao PDR',
+            country: 'LA',
+            city: 'Vientiane',
+            keywords: ['coffee'],
+            status: 'active',
+            is_featured: false
+        }],
+        parseSearchQuery('coffee')
+    );
+    assert.equal(ranked[0].name, 'Café Sinouk');
+    assert.equal(ranked[0].description, 'Café in Vientiane');
 });

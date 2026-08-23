@@ -14,8 +14,12 @@
  *   - drops stopwords so "in"/"the"/"and"/"best"/"places" cannot zero or broaden a query
  *   - treats country-generic tokens (laos, lao, pdr) as ranking boosts only
  *   - ANDs remaining content tokens so a specific query stays a tight set
+ *   - cuisine/style + place (japanese restaurant) stays AND — no restaurant OR-dump
  *   - retries once with the strongest leftover token if the AND set is empty
+ *     (never by dropping a cuisine/style when a place word is also present)
  *   - ranks name/category hits above description/address matches
+ *   - consumer food/drink/stay queries boost cafes/restaurants/hotels and
+ *     demote factories/machineries (factories still match, just later)
  *   - merges the last few user turns when the new message is a short follow-up
  *     (cheaper / wifi / working / "in Vientiane only")
  *
@@ -112,10 +116,45 @@ const CATEGORY_PHRASES = {
     hotels: 'hotels',
     ramen: 'ramen spots',
     restaurant: 'restaurants',
+    food: 'food matches',
     bank: 'bank matches',
     lawyer: 'lawyer matches',
     travel: 'travel matches'
 };
+
+// Cuisine/style + place must stay AND. Live catalog has no sushi/japanese rows
+// (verified 2026-08-23); dropping "japanese" and retrying "restaurant" dumped
+// western restaurants such as Highland Garden.
+const CUISINE_STYLES = new Set([
+    'japanese', 'sushi', 'lao', 'thai', 'chinese', 'western'
+]);
+const PLACE_WORDS = new Set([
+    'restaurant', 'restaurants', 'cafe', 'cafes', 'hotel', 'hotels'
+]);
+
+// Food / drink / stay (and lawyer as professional-ok). Boost consumer-facing
+// name/category; demote industrial rows only for consumer place-words.
+const CONSUMER_INTENTS = new Set([
+    'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'hotel', 'hotels', 'eat', 'food', 'lawyer'
+]);
+const CONSUMER_PLACE_WORDS = new Set([
+    'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'hotel', 'hotels', 'food'
+]);
+const CONSUMER_SIGNALS = [
+    'coffee shop', 'coffee house', 'cafe', 'café', 'restaurant',
+    'hotel', 'hospitality', 'tourism', 'bakery', 'bar', 'legal',
+    'supermarket', 'food & beverages', 'food and beverages', 'grocery'
+];
+const INDUSTRIAL_SIGNALS = [
+    'manufacture', 'factory', 'association', 'machineries',
+    'agriculture', 'agric', 'garment', 'importer', 'cold storage',
+    'import-export'
+];
+const CONSUMER_BOOST = 80;
+const INDUSTRIAL_DEMOTE = 90;
+const BUSINESS_SERVICES_DEMOTE = 20;
 
 const GREETING_LINE = "That's not a listing. Try a business name, or a city + what they do.";
 const EMPTY_LINE = 'Nothing in the directory for that. Try a name, or a city + what they do.';
@@ -164,10 +203,40 @@ function strongestContentTerms(terms) {
     return [best];
 }
 
+function hasCuisineStyle(terms) {
+    return (terms || []).some((term) => CUISINE_STYLES.has(term));
+}
+
+function hasPlaceWord(terms) {
+    return (terms || []).some((term) => PLACE_WORDS.has(term));
+}
+
+function isCuisinePlaceQuery(terms) {
+    return hasCuisineStyle(terms) && hasPlaceWord(terms);
+}
+
+function cuisinePlaceTerms(terms) {
+    return (terms || []).filter((term) => CUISINE_STYLES.has(term) || PLACE_WORDS.has(term));
+}
+
 function nextRetryQuery(parsed) {
     if (!parsed || !Array.isArray(parsed.contentTerms) || parsed.contentTerms.length <= 1) {
         return null;
     }
+
+    // Cuisine + place is a specific ask. Zero is correct when the catalog
+    // has no sushi/japanese rows — do not fall back to restaurant-only.
+    if (isCuisinePlaceQuery(parsed.contentTerms)) {
+        const required = cuisinePlaceTerms(parsed.contentTerms);
+        const extras = parsed.contentTerms.filter((term) => !required.includes(term));
+        if (!extras.length) return null;
+        return {
+            ...parsed,
+            contentTerms: required,
+            isEmpty: false
+        };
+    }
+
     const contentTerms = strongestContentTerms(parsed.contentTerms);
     if (!contentTerms.length) return null;
     if (
@@ -205,6 +274,7 @@ function parseSearchQuery(query) {
     const locationTerms = [];
     const seenContent = new Set();
     const seenLocation = new Set();
+    const rawHasPlace = tokens.some((token) => PLACE_WORDS.has(token));
 
     for (const token of tokens) {
         if (STOPWORDS.has(token)) continue;
@@ -212,6 +282,11 @@ function parseSearchQuery(query) {
             if (!seenLocation.has(token)) {
                 seenLocation.add(token);
                 locationTerms.push({ token, ...COUNTRY_GENERICS[token] });
+            }
+            // "lao restaurant" is cuisine+place, not a country-only leftover.
+            if (rawHasPlace && CUISINE_STYLES.has(token) && !seenContent.has(token)) {
+                seenContent.add(token);
+                contentTerms.push(token);
             }
             continue;
         }
@@ -345,6 +420,73 @@ function haystack(value) {
     return String(value).toLowerCase();
 }
 
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasSignal(text, signals) {
+    const hay = haystack(text);
+    if (!hay) return false;
+    return (signals || []).some((signal) => {
+        const body = escapeRegExp(signal).replace(/\\ /g, '[\\s&/-]+');
+        return new RegExp(`(?:^|[^a-z0-9])${body}(?:[^a-z0-9]|$)`, 'i').test(hay);
+    });
+}
+
+function listingFaceText(business) {
+    return [
+        haystack(business && business.name),
+        haystack(business && business.category),
+        haystack(business && business.business_type)
+    ].join(' ');
+}
+
+function listingMatchText(business) {
+    return [
+        haystack(business && business.name),
+        haystack(business && business.category),
+        haystack(business && business.description),
+        haystack(business && business.address),
+        haystack(business && business.keywords),
+        haystack(business && business.city),
+        haystack(business && business.country),
+        haystack(business && business.business_type)
+    ].join(' ');
+}
+
+function looksConsumerFacing(business) {
+    return hasSignal(listingFaceText(business), CONSUMER_SIGNALS);
+}
+
+function looksIndustrial(business) {
+    return hasSignal(listingFaceText(business), INDUSTRIAL_SIGNALS);
+}
+
+function isConsumerIntentQuery(parsed) {
+    return ((parsed && parsed.contentTerms) || []).some((term) => CONSUMER_INTENTS.has(term));
+}
+
+function isConsumerPlaceQuery(parsed) {
+    return ((parsed && parsed.contentTerms) || []).some((term) => CONSUMER_PLACE_WORDS.has(term));
+}
+
+function rowMatchesCuisinePlace(business, parsed) {
+    const terms = (parsed && parsed.contentTerms) || [];
+    if (!isCuisinePlaceQuery(terms)) return true;
+    const required = cuisinePlaceTerms(terms);
+    const text = listingMatchText(business);
+    return required.every((term) => text.includes(term));
+}
+
+function decodeListingFields(business) {
+    if (!business || typeof business !== 'object') return business;
+    const out = { ...business };
+    for (const key of ['name', 'category', 'description', 'address']) {
+        if (typeof out[key] === 'string') out[key] = decodeMojibake(out[key]);
+    }
+    return out;
+}
+
 function scoreBusiness(business, parsed) {
     const name = haystack(business && business.name);
     const category = haystack(business && business.category);
@@ -376,14 +518,25 @@ function scoreBusiness(business, parsed) {
         if (city.includes(loc.token)) score += 8;
     }
 
+    if (isConsumerIntentQuery(parsed)) {
+        if (looksConsumerFacing(business)) {
+            score += CONSUMER_BOOST;
+        } else if (isConsumerPlaceQuery(parsed) && looksIndustrial(business)) {
+            score -= INDUSTRIAL_DEMOTE;
+        } else if (isConsumerPlaceQuery(parsed) && listingFaceText(business).includes('business services')) {
+            score -= BUSINESS_SERVICES_DEMOTE;
+        }
+    }
+
     if (business && business.is_featured) score += 5;
     return score;
 }
 
 function rankBusinesses(businesses, parsed) {
     return (businesses || [])
+        .filter((business) => rowMatchesCuisinePlace(business, parsed))
         .map((business, index) => ({
-            business,
+            business: decodeListingFields(business),
             index,
             score: scoreBusiness(business, parsed)
         }))
@@ -544,6 +697,11 @@ module.exports = {
     COUNTRY_GENERICS,
     LOCATION_HINTS,
     OUT_OF_COVERAGE,
+    CUISINE_STYLES,
+    PLACE_WORDS,
+    CONSUMER_INTENTS,
+    CONSUMER_SIGNALS,
+    INDUSTRIAL_SIGNALS,
     GREETING_LINE,
     EMPTY_LINE,
     EMPTY_OUTSIDE_LINE,
@@ -553,7 +711,9 @@ module.exports = {
     parseSearchQuery,
     strongestContentTerms,
     nextRetryQuery,
+    isCuisinePlaceQuery,
     decodeMojibake,
+    decodeListingFields,
     isGreeting,
     isFollowUp,
     mentionsOutsideCoverage,

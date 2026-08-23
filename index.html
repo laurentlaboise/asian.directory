@@ -266,6 +266,8 @@
             'tokyo', 'japan', 'osaka', 'kyoto', 'yokohama',
             'seoul', 'korea', 'beijing', 'shanghai', 'ramen'
         ]);
+        const CHAT_CUISINE_STYLES = new Set(['japanese', 'sushi', 'lao', 'thai', 'chinese', 'western']);
+        const CHAT_PLACE_WORDS = new Set(['restaurant', 'restaurants', 'cafe', 'cafes', 'hotel', 'hotels']);
         const CHAT_CITY_DISPLAY = {
             vientiane: 'Vientiane', tokyo: 'Tokyo', bangkok: 'Bangkok', seoul: 'Seoul',
             hanoi: 'Hanoi', singapore: 'Singapore', jakarta: 'Jakarta', manila: 'Manila',
@@ -798,9 +800,12 @@
                 enableButtons();
             };
 
+            const cuisinePlace = terms.some((term) => CHAT_CUISINE_STYLES.has(term))
+                && terms.some((term) => CHAT_PLACE_WORDS.has(term));
+
             searchApi(terms.join(' '))
                 .then((results) => {
-                    if (results.length === 0 && terms.length > 1) {
+                    if (results.length === 0 && terms.length > 1 && !cuisinePlace) {
                         const strong = strongestChatTokens(terms);
                         if (strong.join(' ') !== terms.join(' ')) {
                             return searchApi(strong.join(' ')).then((retryResults) => {
@@ -814,7 +819,7 @@
                     console.error('Error fetching from API:', error);
                     let results = searchLocal(terms);
                     let retried = false;
-                    if (results.length === 0 && terms.length > 1) {
+                    if (results.length === 0 && terms.length > 1 && !cuisinePlace) {
                         results = searchLocal(strongestChatTokens(terms));
                         retried = true;
                     }
