@@ -10,6 +10,10 @@
  * "working capital". Never invent tokens. Never tag best / #1 /
  * verified / top-rated even when those words appear.
  *
+ * Remy guard: copy only allow-list whole-word tokens into existing
+ * keywords. Never copy email / phone / contact. Never infer wifi from
+ * working or laptop.
+ *
  * extractTokens(row) is a pure function. It reads name, category, and
  * description only and returns unique allowed tokens that already
  * appear as whole words or obvious phrases. No new SQL columns —
@@ -26,6 +30,10 @@ const CUISINE = ['lao', 'thai', 'chinese', 'japanese', 'sushi', 'ramen', 'wester
 const PHRASES = ['currently building'];
 
 const BLOCKED = new Set(['best', '#1', '1', 'verified', 'top-rated', 'toprated', 'top rated']);
+const CONTACT_WORDS = new Set(['email', 'e-mail', 'phone', 'telephone', 'mobile', 'contact', 'contacts']);
+const CONTACT_FIELDS = ['email', 'phone', 'alt_phone', 'contact_person', 'contact_person_title'];
+const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+const PHONE_RE = /(?:\+?\d[\d\s().-]{6,}\d)/;
 
 const OFFERING_WORDS = new Set([...AMENITY, ...SERVICE]);
 
@@ -107,11 +115,41 @@ function flattenCopyValue(value) {
 }
 
 function copyHay(row) {
+    const src = { ...(row && typeof row === 'object' ? row : {}) };
+    for (const field of CONTACT_FIELDS) delete src[field];
     return [
-        flattenCopyValue(row && row.name),
-        flattenCopyValue(row && row.category),
-        flattenCopyValue(row && row.description)
+        flattenCopyValue(src.name),
+        flattenCopyValue(src.category),
+        flattenCopyValue(src.description)
     ].map(normalizeCopy).join(' ');
+}
+
+function looksLikeContact(token) {
+    const key = String(token == null ? '' : token).trim();
+    if (!key) return true;
+    const lower = key.toLowerCase();
+    if (CONTACT_WORDS.has(lower)) return true;
+    if (EMAIL_RE.test(key)) return true;
+    if (PHONE_RE.test(key)) return true;
+    return false;
+}
+
+function isAllowlistedToken(token) {
+    const key = String(token || '').trim().toLowerCase();
+    return SEARCHABLE_COPY_TOKENS.has(key) && !BLOCKED.has(key) && !looksLikeContact(key);
+}
+
+/**
+ * Remy: only allow-list whole words may be written into keywords.
+ * Drops email/phone/contact and wifi that was not actually in the copy.
+ */
+function guardCopiedKeywords(tokens, hay) {
+    return uniqueTokens(tokens).filter((token) => {
+        if (!isAllowlistedToken(token)) return false;
+        if (looksLikeContact(token)) return false;
+        if (WIFI_FORMS.has(token) && hay && !textHasToken(hay, token)) return false;
+        return true;
+    });
 }
 
 function escapeRegExp(value) {
@@ -189,12 +227,16 @@ function copyTokensInText(text) {
 
 /**
  * Unique allowed tokens already present in name, category, or description.
- * Never invents. Never returns blocked ranking words.
+ * Remy: allow-list whole words only. Never invents, never copies
+ * email/phone/contact, never infers wifi from working/laptop.
  */
 function extractTokens(row) {
     const hay = copyHay(row);
     if (!hay.trim()) return [];
-    return ALLOWED_IN_ORDER.filter((token) => textHasToken(hay, token));
+    return guardCopiedKeywords(
+        ALLOWED_IN_ORDER.filter((token) => textHasToken(hay, token)),
+        hay
+    );
 }
 
 function asList(value) {
@@ -277,6 +319,8 @@ module.exports = {
     CUISINE,
     PHRASES,
     BLOCKED,
+    CONTACT_WORDS,
+    CONTACT_FIELDS,
     OFFERING_WORDS,
     ALLOWED_IN_ORDER,
     SEARCHABLE_COPY_TOKENS,
@@ -286,6 +330,9 @@ module.exports = {
     normalizeCopy,
     copyHay,
     hasCopyToken,
+    looksLikeContact,
+    isAllowlistedToken,
+    guardCopiedKeywords,
     copyTokensInText,
     extractTokens,
     asList,

@@ -154,6 +154,39 @@ test('does not tag working from working capital', () => {
     assert.ok(positive.includes('wifi'));
 });
 
+test('Remy guard: never copy email, phone, or contact into keywords', () => {
+    const tokens = extractTokens({
+        name: 'Yuni Coffee Company, Ltd.',
+        category: 'Business Services',
+        description: 'Contact email: sales@yunicoffeeco.com Phone +856 20 5551234',
+        email: 'hidden@example.com',
+        phone: '+856 20 0000',
+        alt_phone: '+856 20 1111',
+        contact_person: 'Remy'
+    });
+    const blob = tokens.join(' ');
+    assert.ok(!tokens.includes('email'));
+    assert.ok(!tokens.includes('phone'));
+    assert.ok(!tokens.includes('contact'));
+    assert.ok(!tokens.includes('remy'));
+    assert.doesNotMatch(blob, /@|yunicoffeeco|hidden@example/);
+    assert.doesNotMatch(blob, /\+856|5551234|0000|1111/);
+    assert.ok(tokens.every((token) => !/@/.test(token)));
+});
+
+test('Remy guard: never infer wifi from working or laptop', () => {
+    const tokens = extractTokens({
+        name: 'Catalog cafe',
+        category: 'cafe',
+        description: 'Tables for working. Bring a laptop.'
+    });
+    assert.ok(tokens.includes('cafe'));
+    assert.ok(tokens.includes('working'));
+    assert.ok(tokens.includes('laptop'));
+    assert.ok(!tokens.includes('wifi'));
+    assert.ok(!tokens.includes('wi-fi'));
+});
+
 test('does not invent sushi or wifi from adjacent vibe words', () => {
     const tokens = extractTokens({
         name: 'Highland Garden Restaurant Vientiane',
