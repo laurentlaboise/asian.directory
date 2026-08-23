@@ -226,21 +226,22 @@ test('best coffee lists matching rows and does not rank', async () => {
 });
 
 test('hello clarifies before search and does not invent listings', async () => {
-    let searched = false;
+    const probed = [];
     const result = await handleChatRequest({
         messages: [{ role: 'user', content: 'hello' }],
         env: { XAI_API_KEY: 'xai-secret-test-key' },
-        searchBusinesses: async () => {
-            searched = true;
+        searchBusinesses: async (query) => {
+            probed.push(query);
             return [VANMAI_COFFEE];
         },
         completeChat: async () => 'should not be used'
     });
-    assert.equal(searched, false);
+    assert.ok(probed.every((query) => !/\bhello\b/i.test(query)));
     assert.equal(result.body.mode, 'clarify');
     assert.equal(result.body.reply, GREETING_REPLY);
     assert.deepEqual(result.body.listings, []);
     assert.ok(result.body.chips.includes('Vientiane?'));
+    assert.ok(!result.body.chips.some((chip) => /sushi/i.test(chip)));
     assert.doesNotMatch(result.body.reply, /[\u{1F300}-\u{1FAFF}]/u);
 });
 
@@ -422,6 +423,7 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
     assert.match(indexSrc, /class="follow-up-chips/);
     assert.match(indexSrc, /const isVaguePrompt/);
     assert.match(indexSrc, /Welcome\. Looking to eat, drink, stay/);
+    assert.doesNotMatch(indexSrc, /chips:\s*\[[^\]]*Sushi\?/);
     assert.match(chatSrc, /reasoning_effort:\s*'none'/);
 
     const listingsDir = path.join(__dirname, '..', 'listings');
@@ -474,13 +476,14 @@ test('vague food and need asks clarify before search and skip junk listings', as
     ];
 
     for (const { text, reply } of prompts) {
-        let searched = false;
+        const probed = [];
         let called = false;
         const result = await handleChatRequest({
             messages: [{ role: 'user', content: text }],
             env: { XAI_API_KEY: 'xai-secret-test-key' },
-            searchBusinesses: async () => {
-                searched = true;
+            searchBusinesses: async (query) => {
+                probed.push(query);
+                if (/sushi/i.test(query)) return [];
                 return [VANMAI_COFFEE, YUNI_COFFEE];
             },
             completeChat: async () => {
@@ -488,14 +491,15 @@ test('vague food and need asks clarify before search and skip junk listings', as
                 return 'should not be used';
             }
         });
-        assert.equal(searched, false, text);
+        assert.ok(probed.every((query) => !/\b(hungry|eat|bored|help)\b/i.test(query)), text);
         assert.equal(called, false, text);
         assert.equal(result.status, 200, text);
         assert.equal(result.body.mode, 'clarify', text);
         assert.equal(result.body.reply, reply, text);
         assert.deepEqual(result.body.listings, [], text);
         assert.ok(result.body.chips.length > 0, text);
-        assert.ok(result.body.chips.some((chip) => /Vientiane|Sushi|Coffee|Hotels/i.test(chip)), text);
+        assert.ok(result.body.chips.some((chip) => /Vientiane|Coffee|Hotels|Lawyers|Restaurants|Banks|Travel/i.test(chip)), text);
+        assert.ok(!result.body.chips.some((chip) => /sushi/i.test(chip)), text);
         assert.doesNotMatch(result.body.reply, /amazing|must-try|best in the world/i);
         assert.doesNotMatch(JSON.stringify(result.body), /xai-secret-test-key/);
     }

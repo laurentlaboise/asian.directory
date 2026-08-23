@@ -16,6 +16,7 @@ try {
 const path = require('path');
 const crypto = require('crypto');
 const { parseSearchQuery, buildContentSearchSql, rankBusinesses, nextRetryQuery, decodeMojibake } = require('./search-query');
+const { attachTaxonomy } = require('./categories');
 
 // Initialize database
 const db = new Database(path.join(__dirname, 'asian-directory.db'));
@@ -351,7 +352,7 @@ function seedData() {
 // Helper to parse JSON fields
 function parseBusiness(business) {
     if (!business) return null;
-    return {
+    return attachTaxonomy({
         ...business,
         name: decodeMojibake(business.name),
         category: decodeMojibake(business.category),
@@ -365,7 +366,7 @@ function parseBusiness(business) {
         special_offerings: business.special_offerings ? JSON.parse(business.special_offerings) : [],
         is_featured: !!business.is_featured,
         is_active: business.is_active !== undefined ? !!business.is_active : true
-    };
+    });
 }
 
 // Database operations

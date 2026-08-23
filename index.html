@@ -670,6 +670,7 @@
                             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50 flex flex-col gap-3">
                                 <div>
                                     <h3 class="font-bold text-lg text-yellow-500 dark:text-yellow-400">${escapeHtml(name)}</h3>
+                                    ${business.category ? `<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${escapeHtml(business.category)}${business.taxonomy && business.taxonomy.label && String(business.taxonomy.label).toLowerCase() !== String(business.category).toLowerCase() ? ` · ${escapeHtml(business.taxonomy.label)}` : ''}</p>` : ''}
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${escapeHtml(shortDescription)}</p>
                                 </div>
                                 
@@ -769,7 +770,7 @@
                 addAIResponse([], {
                     ...metaBase,
                     emptyReason: 'vague',
-                    chips: ['Sushi?', 'Coffee?', 'Vientiane?']
+                    chips: ['Coffee?', 'Hotels?', 'Vientiane?']
                 });
                 enableButtons();
                 return;

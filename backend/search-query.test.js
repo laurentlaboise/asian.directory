@@ -10,6 +10,8 @@ const {
     strongestContentTerms,
     nextRetryQuery,
     decodeMojibake,
+    mapListing,
+    termAliases,
     isGreeting,
     isFollowUp,
     reformulateWithHistory,
@@ -546,6 +548,35 @@ test('hungry stays empty for search; hello still does not search', () => {
     assert.equal(buildContentSearchSql(parseSearchQuery("I'm hungry"), 'pg').sql, null);
     assert.equal(parseSearchQuery('hello').isEmpty, true);
     assert.deepEqual(parseSearchQuery('what should I eat?').contentTerms, []);
+});
+
+test('restaurants expands to restaurant without dumping hospitality-only rows', () => {
+    const parsed = parseSearchQuery('restaurants');
+    assert.deepEqual(termAliases('restaurants'), ['restaurants', 'restaurant']);
+    const sql = buildContentSearchSql(parsed, 'pg');
+    assert.ok(sql.params.includes('%restaurant%'));
+    assert.doesNotMatch(sql.sql, /\) OR \(/);
+
+    const kualao = {
+        id: 3,
+        name: 'Kualao Restaurant',
+        category: 'tourism',
+        description: 'A public listing.',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const hospitalityOnly = {
+        id: 4,
+        name: 'Generic hospitality row',
+        category: "['hospitality']",
+        description: 'A public listing.',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    assert.equal(mapListing(kualao).sub, 'restaurant');
+    assert.ok(scoreBusiness(kualao, parsed) > scoreBusiness(hospitalityOnly, parsed));
 });
 
 test('search payload decodes mojibake on listing name and description', () => {

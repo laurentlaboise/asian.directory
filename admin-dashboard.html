@@ -1000,7 +1000,7 @@ function renderBusinessTable() {
         : filtered.map(b => `
             <tr class="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer" onclick="openEditBusiness(${b.id})">
                 <td class="px-4 py-3 font-medium">${b.name}</td>
-                <td class="px-4 py-3 hidden sm:table-cell text-gray-500 dark:text-gray-400">${b.category}</td>
+                <td class="px-4 py-3 hidden sm:table-cell text-gray-500 dark:text-gray-400">${b.category}${b.taxonomy && b.taxonomy.label && String(b.taxonomy.label).toLowerCase() !== String(b.category).toLowerCase() ? ` · ${b.taxonomy.label}` : ''}</td>
                 <td class="px-4 py-3 hidden md:table-cell text-gray-500 dark:text-gray-400">${b.country || '-'}</td>
                 <td class="px-4 py-3">${badge(b.status, 'status')}</td>
                 <td class="px-4 py-3 hidden lg:table-cell text-gray-500 dark:text-gray-400">${stageLabel(b.pipeline_stage)}</td>
