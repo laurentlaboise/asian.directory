@@ -494,6 +494,8 @@ test('japanese restaurant stays AND and does not return a western-only restauran
     const parsed = parseSearchQuery('japanese restaurant');
     assert.deepEqual(parsed.contentTerms, ['japanese', 'restaurant']);
     assert.equal(nextRetryQuery(parsed), null);
+    assert.deepEqual(parseSearchQuery('lao restaurant').contentTerms, ['lao', 'restaurant']);
+    assert.equal(nextRetryQuery(parseSearchQuery('sushi restaurant')), null);
 
     const sql = buildContentSearchSql(parsed, 'pg');
     assert.deepEqual(sql.params, ['%japanese%', '%restaurant%']);
