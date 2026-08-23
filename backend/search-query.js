@@ -27,6 +27,9 @@
  *     on the row; food_drink/hotels_travel/legal beat industry parents
  *   - merges the last few user turns when the new message is a short follow-up
  *     (cheaper / wifi / working / "in Vientiane only")
+ *   - named category tokens (hotel/lawyer/construction/restaurant/cafe) keep
+ *     only mapListing taxonomy matches; school≠hotel, bank≠lawyer
+ *   - cheaper/amenity follow-ups keep prior city+category (do not drop LP)
  *   - copy-tokens (Sage / Laurent 23 Aug): if keywords exist, boost/filter
  *     when the query contains that exact token (chinese + developer, wifi,
  *     apartment rental). Missing tokens stay honest-empty — "currently
@@ -49,13 +52,16 @@ const STOPWORDS = new Set([
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'business', 'businesses',
+    'ones', 'company', 'companies',
     // Vague / junk tokens. Do not AND these into SQL or treat them as a category.
     'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help',
     // Amenity / quality follow-ups that are still not listing text.
     // wifi / working / laptop are copy-tokens: if the word was copied into
     // keywords they AND and filter. hours/reviews stay stopwords.
+    // family/families is a quality ask, not a listing token (would retry to a school).
     'work', 'hours', 'which', 'they', 'have', 'only',
-    'reviews', 'review'
+    'reviews', 'review',
+    'family', 'families', 'kids', 'children'
 ]);
 
 const GREETINGS = new Set(['hello', 'hi', 'hey']);
@@ -64,7 +70,9 @@ const FOLLOW_UP_CUES = new Set([
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
-    'reviews', 'review', 'laptop', 'laptops'
+    'reviews', 'review', 'laptop', 'laptops',
+    'ones', 'family', 'families', 'kids', 'children',
+    'price', 'prices'
 ]);
 
 const {
@@ -139,6 +147,9 @@ const CATEGORY_PHRASES = {
     food: 'food matches',
     bank: 'bank matches',
     lawyer: 'lawyer matches',
+    lawyers: 'lawyer matches',
+    law: 'lawyer matches',
+    construction: 'construction matches',
     travel: 'travel matches'
 };
 
@@ -186,6 +197,9 @@ const {
     mapListing,
     termAliases,
     queryConsumerParents,
+    namedCategoryConstraint,
+    isCategoryToken,
+    rowMatchesNamedCategory,
     CONSUMER_PARENTS,
     INDUSTRY_PARENTS
 } = require('./categories');
@@ -274,6 +288,28 @@ function nextRetryQuery(parsed) {
     // Copy-tokens are exact filters (wifi, currently building, chinese).
     // Do not retry by dropping them — that dumped construction firms.
     if ((parsed.contentTerms || []).some((term) => SEARCHABLE_COPY_TOKENS.has(term))) {
+        return null;
+    }
+
+    // Named category + leftover quality/filler (families, companies): drop the
+    // extras and keep category + city. Never retry "families" alone (school).
+    const terms = parsed.contentTerms || [];
+    const categoryTerms = terms.filter((term) => isCategoryToken(term));
+    const locationContent = terms.filter((term) => LOCATION_HINTS.has(term));
+    const extras = terms.filter((term) => (
+        !isCategoryToken(term)
+        && !LOCATION_HINTS.has(term)
+        && !SEARCHABLE_COPY_TOKENS.has(term)
+    ));
+    if (categoryTerms.length && extras.length) {
+        return {
+            ...parsed,
+            contentTerms: [...categoryTerms, ...locationContent],
+            isEmpty: false
+        };
+    }
+    // Category + city is a specific ask. Do not drop Luang Prabang for hotels.
+    if (categoryTerms.length && locationContent.length) {
         return null;
     }
 
@@ -459,8 +495,13 @@ function reformulateWithHistory(latest, history) {
     const latestTokens = new Set(tokenize(latest));
     const latestParsed = parseSearchQuery(latest);
     const replacing = latestTokens.has('instead');
-    const extras = (replacing ? cities : [...categories, ...cities])
-        .filter((term) => !latestParsed.contentTerms.includes(term) && !latestTokens.has(term));
+    const latestHasCity = [...latestTokens].some((token) => LOCATION_HINTS.has(token));
+    // Explicit city ("in Vientiane only") replaces the prior city. Amenity /
+    // cheaper follow-ups keep both category and city.
+    const extras = [
+        ...(replacing ? [] : categories),
+        ...(latestHasCity ? [] : cities)
+    ].filter((term) => !latestParsed.contentTerms.includes(term) && !latestTokens.has(term));
 
     if (!extras.length) return String(latest || '');
     return `${String(latest || '').trim()} ${extras.join(' ')}`.trim();
@@ -576,6 +617,23 @@ function rowMatchesCopyTokens(business, parsed) {
     });
 }
 
+function rowMatchesQueryCity(business, parsed) {
+    const terms = (parsed && parsed.contentTerms) || [];
+    const cityHints = terms.filter((term) => LOCATION_HINTS.has(term) && !COUNTRY_GENERICS[term]);
+    if (!cityHints.length) return true;
+    const blob = `${haystack(business && business.city)} ${haystack(business && business.address)}`;
+    if (cityHints.includes('luang') && cityHints.includes('prabang')) {
+        return blob.includes('luang') && blob.includes('prabang');
+    }
+    if (cityHints.includes('vang') && cityHints.includes('vieng')) {
+        return blob.includes('vang') && blob.includes('vieng');
+    }
+    if (cityHints.includes('kuala') && cityHints.includes('lumpur')) {
+        return blob.includes('kuala') && blob.includes('lumpur');
+    }
+    return cityHints.every((hint) => blob.includes(hint));
+}
+
 function decodeListingFields(business) {
     if (!business || typeof business !== 'object') return business;
     const out = { ...business };
@@ -663,9 +721,13 @@ function scoreBusiness(business, parsed) {
 }
 
 function rankBusinesses(businesses, parsed) {
+    const constraint = namedCategoryConstraint((parsed && parsed.contentTerms) || []);
     return (businesses || [])
         .filter((business) => (
-            rowMatchesCuisinePlace(business, parsed) && rowMatchesCopyTokens(business, parsed)
+            rowMatchesCuisinePlace(business, parsed)
+            && rowMatchesCopyTokens(business, parsed)
+            && rowMatchesNamedCategory(business, constraint)
+            && rowMatchesQueryCity(business, parsed)
         ))
         .map((business, index) => ({
             business: decodeListingFields(business),
@@ -743,10 +805,15 @@ function displayCity(term) {
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
-function categoryPhrase(terms) {
+function categoryPhrase(terms, results) {
     for (const term of terms || []) {
         if (LOCATION_HINTS.has(term)) continue;
         if (STRICT_COPY_TOKENS.has(term)) continue;
+        const constraint = namedCategoryConstraint([term]);
+        if (constraint && !constraint.soft && (results || []).length) {
+            const allMatch = results.every((row) => rowMatchesNamedCategory(row, constraint));
+            if (!allMatch) continue;
+        }
         if (CATEGORY_PHRASES[term]) return CATEGORY_PHRASES[term];
         return `${term} matches`;
     }
@@ -794,7 +861,7 @@ function buildAssistantLine({ query, parsed, results, truncated, retried, emptyR
     if (truncated) return TOO_MANY_LINE;
 
     const terms = (parsed && parsed.contentTerms) || parseSearchQuery(query).contentTerms;
-    const category = categoryPhrase(terms);
+    const category = categoryPhrase(terms, list);
     const city = cityFromTerms(terms) || dominantCityName(list);
 
     if (category && city) return `Here are ${category} in ${city}.`;
@@ -812,22 +879,32 @@ function buildFollowUpChips({ parsed, results }) {
     const hasCity = terms.some((term) => LOCATION_HINTS.has(term));
     const chips = [];
 
+    if (!category && !hasCity && !(results || []).length) {
+        chips.push('Which city?');
+        return chips;
+    }
+
     if (category === 'coffee' && !hasCity) {
         chips.push('In Vientiane?');
         chips.push('Hotels instead?');
+    } else if (category === 'coffee') {
+        chips.push('Any others?');
+        chips.push('In Vientiane?');
     } else {
         if (!hasCity) {
             const city = dominantCityName(results);
             if (city) chips.push(`In ${city}?`);
+            else chips.push('Which city?');
         }
-        if (category === 'coffee') chips.push('Hotels instead?');
-        else if (category === 'hotel' || category === 'hotels') chips.push('Coffee instead?');
+        if (category === 'hotel' || category === 'hotels') chips.push('Coffee instead?');
         else if (category) chips.push('In Vientiane?');
     }
 
     if ((results || []).length) {
         if (!chips.includes('Any others?')) chips.push('Any others?');
         if (!chips.includes('Open late?')) chips.push('Open late?');
+    } else if (category && !chips.includes('Any others?')) {
+        chips.push('Any others?');
     }
 
     return chips.slice(0, 3);
@@ -869,6 +946,10 @@ module.exports = {
     searchWithRetry,
     scoreBusiness,
     rankBusinesses,
+    rowMatchesQueryCity,
+    namedCategoryConstraint,
+    isCategoryToken,
+    rowMatchesNamedCategory,
     buildContentSearchSql,
     buildAssistantLine,
     buildFollowUpChips,

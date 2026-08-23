@@ -9,6 +9,8 @@ const {
     scoreBusiness,
     strongestContentTerms,
     nextRetryQuery,
+    namedCategoryConstraint,
+    rowMatchesNamedCategory,
     decodeMojibake,
     mapListing,
     termAliases,
@@ -811,4 +813,97 @@ test('currently building does not dump construction firms; missing wifi is empty
         parsed: wifiOnly,
         results: []
     }), EMPTY_LINE);
+});
+
+test('named category match excludes school from hotels and bank from lawyer', () => {
+    const school = {
+        id: 1810,
+        name: 'Vientiane International School',
+        category: 'Education',
+        description: 'An international school in Vientiane, good for families. Near hotels.',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const hotelParsed = parseSearchQuery('hotels in Vientiane good for families');
+    assert.deepEqual(hotelParsed.contentTerms, ['hotels', 'vientiane']);
+    assert.equal(nextRetryQuery(hotelParsed), null);
+    const hotelRanked = rankBusinesses([school, SALANA_HOTEL, HOTEL_ASSOCIATION], hotelParsed);
+    assert.equal(hotelRanked.some((row) => row.id === 1810), false);
+    assert.ok(hotelRanked.some((row) => row.id === 486));
+
+    const lawyerParsed = parseSearchQuery('lawyer in Vientiane');
+    const bank = ANZ_LAO_BRANCH;
+    const lawyer = {
+        id: 150,
+        name: 'DFDL (Lao) Sole Co. Ltd',
+        category: 'Legal & Tax',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const ariya = {
+        id: 1902,
+        name: 'Ariya',
+        category: 'Business Services',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const lawyerRanked = rankBusinesses([bank, ariya, lawyer], lawyerParsed);
+    assert.equal(lawyerRanked.some((row) => row.id === 1708), false);
+    assert.equal(lawyerRanked.some((row) => row.id === 1902), false);
+    assert.deepEqual(lawyerRanked.map((row) => row.id), [150]);
+    assert.equal(
+        buildAssistantLine({ query: 'lawyer in Vientiane', parsed: lawyerParsed, results: lawyerRanked }),
+        'Here are lawyer matches in Vientiane.'
+    );
+    assert.notEqual(
+        buildAssistantLine({ query: 'lawyer in Vientiane', parsed: lawyerParsed, results: [bank] }),
+        'Here are lawyer matches in Vientiane.'
+    );
+});
+
+test('construction query excludes consulting/PPE unless the trade is on the row', () => {
+    const industek = {
+        id: 1903,
+        name: 'IndusTek',
+        category: 'Consulting',
+        description: 'PPE and consulting for construction sites in Vientiane.',
+        city: 'Vientiane',
+        country: 'LA',
+        status: 'active'
+    };
+    const parsed = parseSearchQuery('construction companies in Vientiane');
+    assert.deepEqual(parsed.contentTerms, ['construction', 'vientiane']);
+    const ranked = rankBusinesses([industek, CONSTRUCTION_DOUBLE], parsed);
+    assert.equal(ranked.some((row) => /industek/i.test(row.name)), false);
+    assert.ok(ranked.some((row) => row.id === 2));
+    assert.equal(rowMatchesNamedCategory(industek, namedCategoryConstraint(['construction'])), false);
+    assert.equal(rowMatchesNamedCategory(CONSTRUCTION_DOUBLE, namedCategoryConstraint(['construction'])), true);
+});
+
+test('cheaper ones keeps Luang Prabang hotels; explicit city may switch', () => {
+    assert.equal(
+        reformulateWithHistory('cheaper ones', ['hotels in Luang Prabang']),
+        'cheaper ones hotels luang prabang'
+    );
+    const parsed = parseSearchQuery('cheaper ones hotels luang prabang');
+    assert.deepEqual(parsed.contentTerms, ['hotels', 'luang', 'prabang']);
+    const champasak = {
+        id: 1901,
+        name: 'Champasak Palace Hotel',
+        category: 'tourism',
+        city: 'Champasak',
+        country: 'LA',
+        status: 'active'
+    };
+    const ranked = rankBusinesses([SALANA_HOTEL, VILLA_MALY_HOTEL, champasak], parsed);
+    assert.ok(ranked.every((row) => /luang prabang/i.test(row.city)));
+    assert.equal(ranked.some((row) => /vientiane|champasak/i.test(row.city)), false);
+
+    assert.equal(
+        reformulateWithHistory('in Vientiane only', ['restaurants in Luang Prabang']),
+        'in Vientiane only restaurants'
+    );
 });

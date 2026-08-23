@@ -143,7 +143,9 @@ const QUERY_PARENTS = {
     travel: 'hotels_travel',
     lawyer: 'legal_professional',
     lawyers: 'legal_professional',
-    legal: 'legal_professional'
+    legal: 'legal_professional',
+    law: 'legal_professional',
+    construction: 'construction'
 };
 
 // Plurals and listing-text synonyms. Do not expand hospitality/tourism here —
@@ -158,6 +160,8 @@ const QUERY_ALIASES = {
     hotel: ['hotel'],
     lawyers: ['lawyers', 'lawyer', 'legal'],
     lawyer: ['lawyer', 'legal'],
+    law: ['law', 'lawyer', 'legal'],
+    construction: ['construction', 'contractor', 'builder'],
     banks: ['banks', 'bank', 'banking'],
     schools: ['schools', 'school'],
     wifi: ['wifi', 'wi-fi'],
@@ -267,6 +271,7 @@ const NAME_TOKEN_RULES = [
     { re: /\blegal\b/, sub: 'lawyer' },
     { re: /\bbanks?\b/, sub: 'bank' },
     { re: /\bschools?\b/, sub: 'school' },
+    { re: /\b(construction|contractor)\b/, sub: 'contractor' },
     { re: /\bfactory\b/, sub: 'factory' }
 ];
 
@@ -375,6 +380,89 @@ function queryConsumerParents(parsed) {
         if (parent && CONSUMER_PARENTS.has(parent)) parents.add(parent);
     }
     return parents;
+}
+
+const HOTEL_SUBS = new Set(['hotel', 'hostel', 'lodge']);
+const RESTAURANT_SUBS = new Set([
+    'restaurant', 'western', 'chinese', 'french', 'lao', 'thai',
+    'sushi', 'japanese', 'ramen', 'bar', 'bakery', 'food'
+]);
+const CONSTRUCTION_SUBS = new Set(['builder', 'contractor', 'engineering', 'building_materials']);
+const CAFE_SUBS = new Set(['cafe']);
+const LAWYER_SUBS = new Set(['lawyer']);
+
+const NAMED_CATEGORY_TOKENS = {
+    hotel: { primary: 'hotels_travel', subs: HOTEL_SUBS },
+    hotels: { primary: 'hotels_travel', subs: HOTEL_SUBS },
+    lawyer: { primary: 'legal_professional', subs: LAWYER_SUBS },
+    lawyers: { primary: 'legal_professional', subs: LAWYER_SUBS },
+    law: { primary: 'legal_professional', subs: LAWYER_SUBS },
+    legal: { primary: 'legal_professional', subs: LAWYER_SUBS },
+    construction: { primary: 'construction', subs: CONSTRUCTION_SUBS },
+    restaurant: { primary: 'food_drink', subs: RESTAURANT_SUBS },
+    restaurants: { primary: 'food_drink', subs: RESTAURANT_SUBS },
+    cafe: { primary: 'food_drink', subs: CAFE_SUBS },
+    cafes: { primary: 'food_drink', subs: CAFE_SUBS },
+    coffee: { primary: 'food_drink', subs: CAFE_SUBS, soft: true }
+};
+
+function namedCategoryConstraint(terms) {
+    for (const term of terms || []) {
+        const key = String(term || '').toLowerCase();
+        if (NAMED_CATEGORY_TOKENS[key]) {
+            return { token: key, ...NAMED_CATEGORY_TOKENS[key] };
+        }
+    }
+    return null;
+}
+
+function isCategoryToken(term) {
+    return Boolean(NAMED_CATEGORY_TOKENS[String(term || '').toLowerCase()]);
+}
+
+function faceText(row) {
+    return `${nameHay(row)} ${categoryHay(row)}`;
+}
+
+/**
+ * Strict taxonomy match when the query names a category.
+ * Coffee is soft (prefer cafes; traders stay unless a later rank step drops them).
+ * Name/category tokens already on the row can confirm a trade; description cannot.
+ */
+function rowMatchesNamedCategory(row, constraint) {
+    if (!constraint || constraint.soft) return true;
+
+    const mapped = mapListing(row);
+    const face = faceText(row);
+
+    if (constraint.primary === 'hotels_travel') {
+        if (mapped.primary === 'education' || mapped.sub === 'school') return false;
+        if (HOTEL_SUBS.has(mapped.sub)) return true;
+        return /\b(hotels?|resorts?|hostels?|lodges?)\b/.test(face);
+    }
+
+    if (constraint.primary === 'legal_professional') {
+        if (mapped.primary === 'banks_finance' || mapped.sub === 'bank') return false;
+        if (LAWYER_SUBS.has(mapped.sub)) return true;
+        return /\b(law\s+firm|lawyers?|attorney|legal)\b/.test(face);
+    }
+
+    if (constraint.primary === 'construction') {
+        if (mapped.primary === 'construction' || CONSTRUCTION_SUBS.has(mapped.sub)) return true;
+        return /\b(construction|contractor|builder|scaffolding)\b/.test(face);
+    }
+
+    if (constraint.token === 'cafe' || constraint.token === 'cafes') {
+        if (CAFE_SUBS.has(mapped.sub)) return true;
+        return /\b(coffee\s+shop|coffee\s+house|cafes?|café)\b/i.test(nameHay(row));
+    }
+
+    if (constraint.primary === 'food_drink') {
+        if (RESTAURANT_SUBS.has(mapped.sub)) return true;
+        return /\brestaurants?\b/.test(face);
+    }
+
+    return constraint.subs.has(mapped.sub) || mapped.primary === constraint.primary;
 }
 
 function countMapped(rows) {
@@ -534,6 +622,7 @@ module.exports = {
     INDUSTRY_PARENTS,
     QUERY_ALIASES,
     QUERY_PARENTS,
+    NAMED_CATEGORY_TOKENS,
     CHIP_BUCKETS,
     SUSHI_CHIP,
     LOCATION_CHIP,
@@ -542,6 +631,9 @@ module.exports = {
     attachTaxonomy,
     termAliases,
     queryConsumerParents,
+    namedCategoryConstraint,
+    isCategoryToken,
+    rowMatchesNamedCategory,
     countMapped,
     mappedCountFor,
     chipCoverageQuery,

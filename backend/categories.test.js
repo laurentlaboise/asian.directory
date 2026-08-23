@@ -116,6 +116,12 @@ test('Construction company maps to construction', () => {
     const mapped = mapListing(CONSTRUCTION_COMPANY);
     assert.equal(mapped.primary, 'construction');
     assert.match(mapped.sub, /builder|contractor|engineering/);
+
+    const fromName = mapListing({
+        name: 'Mohona Construction Company Limited',
+        category: 'Business Services'
+    });
+    assert.equal(fromName.primary, 'construction');
 });
 
 test('DFDL Legal & Tax maps to legal_professional', () => {

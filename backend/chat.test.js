@@ -26,9 +26,11 @@ const {
     FOOD_CLARIFY_REPLY,
     NEED_CLARIFY_REPLY,
     MISSING_AMENITY_REPLY,
+    MISSING_PRICE_REPLY,
+    CITY_CLARIFY_REPLY,
     OUTSIDE_COVERAGE_REPLY
 } = require('./chat');
-const { EMPTY_LINE, parseSearchQuery } = require('./search-query');
+const { EMPTY_LINE, parseSearchQuery, rankBusinesses } = require('./search-query');
 const fs = require('fs');
 const path = require('path');
 
@@ -320,7 +322,7 @@ test('amenity follow-ups stay search mode even when XAI_API_KEY is set', async (
     }
 });
 
-test('copy-token amenity with no tagged row is honest empty; tagged wifi filters', async () => {
+test('amenity follow-up keeps prior coffee listings when wifi/working are not on the rows', async () => {
     const missing = [
         'which is good for working?',
         'do they have wifi?',
@@ -330,12 +332,16 @@ test('copy-token amenity with no tagged row is honest empty; tagged wifi filters
         let called = false;
         const result = await handleChatRequest({
             messages: [
-                { role: 'user', content: 'best coffee places' },
+                { role: 'user', content: 'coffee in Vientiane' },
                 { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
                 { role: 'user', content: latest }
             ],
             env: { XAI_API_KEY: 'xai-secret-test-key' },
-            searchBusinesses: async () => [],
+            searchBusinesses: async (query) => {
+                assert.match(query, /coffee/i);
+                assert.doesNotMatch(query, /\bwifi\b|\bworking\b|\blaptop\b/i);
+                return [VANMAI_COFFEE, YUNI_COFFEE];
+            },
             completeChat: async () => {
                 called = true;
                 return 'should not be used';
@@ -345,32 +351,12 @@ test('copy-token amenity with no tagged row is honest empty; tagged wifi filters
         assert.equal(called, false, latest);
         assert.equal(result.body.mode, 'search', latest);
         assert.equal(result.body.reply, MISSING_AMENITY_REPLY, latest);
-        assert.deepEqual(result.body.listings, []);
+        assert.ok(result.body.listings.length > 0, latest);
+        assert.equal(result.body.listings.length, 2, latest);
+        assert.ok(result.body.chips.includes('Any others?') || result.body.chips.includes('In Vientiane?'), latest);
+        assert.ok(result.body.chips.length > 1 || !result.body.chips.every((chip) => /Hotels instead/i.test(chip)), latest);
         assert.doesNotMatch(result.body.reply, /wifi|laptop-friendly|quieter/i);
     }
-
-    const wifiRow = {
-        ...YUNI_COFFEE,
-        description: 'A cafe with wifi.',
-        keywords: ['cafe', 'wifi']
-    };
-    const hit = await handleChatRequest({
-        messages: [
-            { role: 'user', content: 'best coffee places' },
-            { role: 'user', content: 'do they have wifi?' }
-        ],
-        env: { XAI_API_KEY: 'xai-secret-test-key' },
-        searchBusinesses: async (query) => {
-            assert.match(query, /wifi/i);
-            return [wifiRow];
-        },
-        completeChat: async () => 'should not be used'
-    });
-    assert.equal(hit.body.mode, 'search');
-    assert.equal(hit.body.listings.length, 1);
-    assert.notEqual(hit.body.reply, MISSING_AMENITY_REPLY);
-    assert.equal(hit.body.listings[0].keywords, undefined);
-    assert.doesNotMatch(JSON.stringify(hit.body.listings), /"keywords"/);
 });
 
 test('provider failure falls back to search mode instead of leaking the key', async () => {
@@ -658,4 +644,192 @@ test('Tokyo and Seoul asks stay honest about SEA/Laos coverage', async () => {
     assert.equal(result.body.reply, OUTSIDE_COVERAGE_REPLY);
     assert.deepEqual(result.body.listings, []);
     assert.doesNotMatch(result.body.reply, /Ichiran|Shibuya/);
+});
+
+const VIENTIANE_INTERNATIONAL_SCHOOL = {
+    id: 1810,
+    name: 'Vientiane International School',
+    category: 'Education',
+    description: 'An international school in Vientiane, good for families. Near hotels.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active'
+};
+
+const SALANA_HOTEL = {
+    id: 486,
+    name: 'Salana Boutique Hotel',
+    category: 'tourism',
+    description: 'Salana Boutique Hotel is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active'
+};
+
+const VILLA_MALY_HOTEL = {
+    id: 1167,
+    name: 'Villa Maly Boutique Hotel',
+    category: 'tourism',
+    description: 'Villa Maly Boutique Hotel is a hotel in Luang Prabang.',
+    address: 'Luang Prabang, Laos',
+    country: 'LA',
+    city: 'Luang Prabang',
+    keywords: [],
+    status: 'active'
+};
+
+const CHAMPASAK_PALACE = {
+    id: 1901,
+    name: 'Champasak Palace Hotel',
+    category: 'tourism',
+    description: 'A hotel in Champasak.',
+    address: 'Pakse, Champasak',
+    country: 'LA',
+    city: 'Champasak',
+    keywords: [],
+    status: 'active'
+};
+
+const ANZ_BANK = {
+    id: 1708,
+    name: 'Australia & New Zealand Banking Group Ltd - Lao Branch',
+    category: 'Banking & Financial Services',
+    description: 'ANZ is the first international bank to operate in Laos.',
+    address: '33 Lane Xang Avenue, Vientiane Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active'
+};
+
+const ARIYA_SERVICES = {
+    id: 1902,
+    name: 'Ariya',
+    category: 'Business Services',
+    description: 'Ariya is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active'
+};
+
+const DFDL_LEGAL = {
+    id: 150,
+    name: 'DFDL (Lao) Sole Co. Ltd',
+    category: 'Legal & Tax',
+    description: 'DFDL Legal & Tax is a public listing.',
+    city: 'Vientiane',
+    country: 'LA',
+    status: 'active'
+};
+
+test('hotel + families does not return a school', async () => {
+    const catalog = [VIENTIANE_INTERNATIONAL_SCHOOL, SALANA_HOTEL, VILLA_MALY_HOTEL];
+    const ranked = rankBusinesses(catalog, parseSearchQuery('hotels in Vientiane good for families'));
+    assert.equal(ranked.some((row) => /school/i.test(row.name)), false);
+    assert.ok(ranked.some((row) => row.id === 486));
+
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: 'hotels in Vientiane good for families' }],
+        env: {},
+        searchBusinesses: async (query) => rankBusinesses(catalog, parseSearchQuery(query))
+    });
+    assert.equal(result.body.mode, 'search');
+    assert.equal(result.body.listings.some((row) => /school/i.test(row.name)), false);
+    assert.ok(result.body.listings.some((row) => /hotel/i.test(row.name)));
+    assert.doesNotMatch(result.body.reply, /school/i);
+});
+
+test('lawyer query does not return a bank', async () => {
+    const catalog = [ANZ_BANK, ARIYA_SERVICES, DFDL_LEGAL];
+    const ranked = rankBusinesses(catalog, parseSearchQuery('lawyer in Vientiane'));
+    assert.equal(ranked.some((row) => /bank/i.test(row.name) || /bank/i.test(row.category)), false);
+    assert.equal(ranked.some((row) => /ariya/i.test(row.name)), false);
+    assert.ok(ranked.some((row) => row.id === 150));
+
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: 'lawyer in Vientiane' }],
+        env: {},
+        searchBusinesses: async (query) => rankBusinesses(catalog, parseSearchQuery(query))
+    });
+    assert.equal(result.body.listings.some((row) => /bank/i.test(row.name)), false);
+    assert.equal(result.body.listings.some((row) => /ariya/i.test(row.name)), false);
+    assert.ok(result.body.listings.every((row) => row.taxonomy && row.taxonomy.sub === 'lawyer'));
+    assert.match(result.body.reply, /lawyer/i);
+});
+
+test('cheaper ones keeps Luang Prabang hotels and admits missing prices', async () => {
+    const catalog = [SALANA_HOTEL, VILLA_MALY_HOTEL, CHAMPASAK_PALACE];
+    const result = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'hotels in Luang Prabang' },
+            { role: 'assistant', content: 'Here are hotels in Luang Prabang.' },
+            { role: 'user', content: 'cheaper ones' }
+        ],
+        env: {},
+        searchBusinesses: async (query) => rankBusinesses(catalog, parseSearchQuery(query))
+    });
+    assert.match(result.body.query, /hotel/i);
+    assert.match(result.body.query, /luang/i);
+    assert.match(result.body.query, /prabang/i);
+    assert.equal(result.body.mode, 'search');
+    assert.equal(result.body.reply, MISSING_PRICE_REPLY);
+    assert.ok(result.body.listings.length > 0);
+    assert.ok(result.body.listings.every((row) => /luang prabang/i.test(row.city)));
+    assert.equal(result.body.listings.some((row) => /vientiane/i.test(row.city)), false);
+    assert.equal(result.body.listings.some((row) => /champasak/i.test(row.city)), false);
+    assert.doesNotMatch(result.body.reply, /Vientiane|Champasak/);
+});
+
+test('amenity follow-up listings.length > 0 when prior search had hits', async () => {
+    const result = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'coffee in Vientiane' },
+            { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+            { role: 'user', content: 'which is good for working?' }
+        ],
+        env: {},
+        searchBusinesses: async (query) => {
+            if (/\bwifi\b|\bworking\b/i.test(query) && !/coffee/i.test(query)) return [];
+            return [VANMAI_COFFEE, YUNI_COFFEE];
+        }
+    });
+    assert.ok(result.body.listings.length > 0);
+    assert.equal(result.body.reply, MISSING_AMENITY_REPLY);
+    assert.ok(result.body.chips.includes('Any others?') || result.body.chips.includes('In Vientiane?'));
+    assert.ok(!(result.body.chips.length === 1 && /Hotels instead/i.test(result.body.chips[0])));
+});
+
+test('open late near me with no city clarifies Which city?', async () => {
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: 'open late near me' }],
+        env: {},
+        searchBusinesses: async () => [VANMAI_COFFEE, YUNI_COFFEE]
+    });
+    assert.equal(result.body.mode, 'clarify');
+    assert.equal(result.body.reply, CITY_CLARIFY_REPLY);
+    assert.deepEqual(result.body.listings, []);
+    assert.ok(result.body.chips.includes('Which city?'));
+});
+
+test('in Vientiane only after Luang Prabang restaurants may switch city', () => {
+    assert.equal(
+        searchQueryFromMessages([
+            { role: 'user', content: 'restaurants in Luang Prabang' },
+            { role: 'user', content: 'in Vientiane only' }
+        ]),
+        'in Vientiane only restaurants'
+    );
+    assert.doesNotMatch(
+        searchQueryFromMessages([
+            { role: 'user', content: 'restaurants in Luang Prabang' },
+            { role: 'user', content: 'in Vientiane only' }
+        ]),
+        /luang|prabang/i
+    );
 });
