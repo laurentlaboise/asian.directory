@@ -38,6 +38,11 @@
         textarea {
             resize: none;
         }
+        /* Chips live only under the latest assistant reply, never under the input. */
+        #chat-input .follow-up-chips,
+        #chat-input .follow-up-chip {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-200">
@@ -455,9 +460,15 @@
             }
         };
 
+        const clearFollowUpChips = () => {
+            document.querySelectorAll('.follow-up-chips').forEach((bar) => bar.remove());
+            document.querySelectorAll('.follow-up-chip').forEach((chip) => chip.remove());
+        };
+
         const submitPrompt = (userPrompt) => {
             const text = String(userPrompt || '').trim();
             if (!text) return;
+            clearFollowUpChips();
             enterChatMode();
             addUserMessage(text);
             getAIResponse(text);
@@ -584,7 +595,7 @@
         const addAIResponse = (results, meta = {}) => {
             const thinkingIndicator = document.getElementById('thinking-indicator');
             if (thinkingIndicator) thinkingIndicator.remove();
-            chatContainer.querySelectorAll('.follow-up-chips').forEach((bar) => bar.remove());
+            clearFollowUpChips();
 
             const list = Array.isArray(results) ? results : [];
             const truncated = list.length > CHAT_CARD_LIMIT;

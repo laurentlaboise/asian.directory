@@ -387,7 +387,9 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
     );
     assert.doesNotMatch(logFn, /reply:/);
     assert.match(logFn, /delete copy\.reply/);
+    assert.match(indexSrc, /const clearFollowUpChips/);
     assert.match(indexSrc, /querySelectorAll\('\.follow-up-chips'\)/);
+    assert.match(indexSrc, /querySelectorAll\('\.follow-up-chip'\)/);
     assert.match(indexSrc, /class="follow-up-chips/);
 
     const listingsDir = path.join(__dirname, '..', 'listings');
@@ -396,4 +398,26 @@ test('SEO lock: never persist spoken reply into description, keywords, or static
         const html = fs.readFileSync(path.join(listingsDir, file), 'utf8');
         assert.doesNotMatch(html, /\/api\/chat/);
     }
+});
+
+test('Jordan visual lock: chips only under the latest assistant reply', () => {
+    const indexSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const submitFn = indexSrc.slice(
+        indexSrc.indexOf('const submitPrompt'),
+        indexSrc.indexOf('const startNewChat')
+    );
+    const addFn = indexSrc.slice(
+        indexSrc.indexOf('const addAIResponse'),
+        indexSrc.indexOf('const logConversation')
+    );
+    assert.match(submitFn, /clearFollowUpChips\(\)/);
+    assert.match(addFn, /clearFollowUpChips\(\)/);
+    assert.match(addFn, /class="follow-up-chips/);
+    assert.match(indexSrc, /#chat-input \.follow-up-chips/);
+
+    const inputBlock = indexSrc.slice(
+        indexSrc.indexOf('id="chat-input"'),
+        indexSrc.indexOf('id="submit-modal"')
+    );
+    assert.doesNotMatch(inputBlock, /follow-up-chips|follow-up-chip/);
 });
