@@ -112,6 +112,48 @@ test('writes new tokens into keywords; offerings only for offering words', () =>
     assert.equal(plan[0].id, 9);
 });
 
+test('does not tag wifi from no / not / without wifi or no wi-fi', () => {
+    const negated = [
+        'Cafe with no wifi.',
+        'Not wifi. Just coffee.',
+        'Seats without wifi.',
+        'No wi-fi in the rooms.'
+    ];
+    for (const description of negated) {
+        const tokens = extractTokens({
+            name: 'Catalog cafe',
+            category: 'cafe',
+            description
+        });
+        assert.ok(!tokens.includes('wifi'), description);
+        assert.ok(!tokens.includes('wi-fi'), description);
+    }
+
+    const mixed = extractTokens({
+        name: 'Catalog cafe',
+        category: 'cafe',
+        description: 'No wifi upstairs. Free wifi in the lobby.'
+    });
+    assert.ok(mixed.includes('wifi'));
+});
+
+test('does not tag working from working capital', () => {
+    const tokens = extractTokens({
+        name: 'Catalog bank desk',
+        category: 'Banking',
+        description: 'Advice on working capital for local firms.'
+    });
+    assert.ok(!tokens.includes('working'));
+
+    const positive = extractTokens({
+        name: 'Catalog cafe',
+        category: 'cafe',
+        description: 'Tables for working. Wifi available.'
+    });
+    assert.ok(positive.includes('working'));
+    assert.ok(positive.includes('wifi'));
+});
+
 test('does not invent sushi or wifi from adjacent vibe words', () => {
     const tokens = extractTokens({
         name: 'Highland Garden Restaurant Vientiane',

@@ -5,8 +5,10 @@
  *
  * Overrides the earlier no-extract freeze for the allow-list only.
  * Casey still applies: never infer wifi, date-night, laptop, or quiet
- * from vibe. Never invent tokens. Never tag best / #1 / verified /
- * top-rated even when those words appear.
+ * from vibe. Residual lock: do not tag wifi from "no wifi" / "not wifi"
+ * / "without wifi" / "no wi-fi", and do not tag working from
+ * "working capital". Never invent tokens. Never tag best / #1 /
+ * verified / top-rated even when those words appear.
  *
  * extractTokens(row) is a pure function. It reads name, category, and
  * description only and returns unique allowed tokens that already
@@ -126,8 +128,51 @@ function isSuitableToken(token) {
     return SUITABLE.includes(String(token || '').toLowerCase());
 }
 
+const WIFI_FORMS = new Set(['wifi', 'wi-fi']);
+const WIFI_NEGATION_WINDOW = /(?:^|[^a-z0-9])(?:no|not|without)[\s-]+$/i;
+const WORKING_CAPITAL_WINDOW = /^[\s-]+capital(?:[^a-z0-9]|$)/i;
+const NEGATION_LOOKBEHIND = 32;
+const COLLOCATION_LOOKAHEAD = 24;
+
+function wholeWordMatches(hay, token, allowHyphen) {
+    const edge = allowHyphen ? '[^a-z0-9]' : '[^a-z0-9-]';
+    const body = escapeRegExp(token).replace(/\\ /g, '[\\s]+').replace(/\\-/g, '[\\s-]+');
+    const re = new RegExp(`(^|${edge})(${body})(?=${edge}|$)`, 'gi');
+    const matches = [];
+    let match = re.exec(hay);
+    while (match) {
+        const start = match.index + match[1].length;
+        matches.push({ start, end: start + match[2].length });
+        if (match.index === re.lastIndex) re.lastIndex += 1;
+        match = re.exec(hay);
+    }
+    return matches;
+}
+
+function wifiMatchIsNegated(hay, start) {
+    const window = hay.slice(Math.max(0, start - NEGATION_LOOKBEHIND), start);
+    return WIFI_NEGATION_WINDOW.test(window);
+}
+
+function workingMatchIsCapital(hay, end) {
+    const window = hay.slice(end, end + COLLOCATION_LOOKAHEAD);
+    return WORKING_CAPITAL_WINDOW.test(window);
+}
+
+function occurrenceCounts(hay, token) {
+    const key = String(token || '').toLowerCase();
+    const matches = wholeWordMatches(hay, key, !isSuitableToken(key));
+    if (WIFI_FORMS.has(key)) {
+        return matches.some((item) => !wifiMatchIsNegated(hay, item.start));
+    }
+    if (key === 'working') {
+        return matches.some((item) => !workingMatchIsCapital(hay, item.end));
+    }
+    return matches.length > 0;
+}
+
 function textHasToken(hay, token) {
-    return tokenPattern(token, { allowHyphen: !isSuitableToken(token) }).test(hay);
+    return occurrenceCounts(hay, token);
 }
 
 function hasCopyToken(text, token) {
