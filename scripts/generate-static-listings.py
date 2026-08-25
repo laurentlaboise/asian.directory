@@ -400,7 +400,9 @@ def page_shell(title: str, description: str, canonical: str, body: str, json_ld:
     <title>{e(title)}</title>
     <meta name="description" content="{e(description)}">
     <meta name="theme-color" content="#FACC15">
-    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="canonical" href="{e(canonical)}">
     <meta property="og:title" content="{e(title)}">
     <meta property="og:description" content="{e(description)}">
