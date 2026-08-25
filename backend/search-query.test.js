@@ -405,7 +405,7 @@ test('best coffee places searches coffee only; hello does not search', () => {
 
 test('conversational prompts drop leftover tokens that are not in listing text', () => {
     assert.deepEqual(parseSearchQuery('best coffee places').contentTerms, ['coffee']);
-    assert.deepEqual(parseSearchQuery('Find a good coffee shop in Vientiane').contentTerms, ['coffee', 'vientiane']);
+    assert.deepEqual(parseSearchQuery('Find a good coffee shop in Vientiane').contentTerms, ['coffee', 'vientiane', 'coffee shop']);
     assert.deepEqual(parseSearchQuery('I need a lawyer').contentTerms, ['lawyer']);
     assert.deepEqual(parseSearchQuery('which is good for working?').contentTerms, ['working']);
     assert.deepEqual(parseSearchQuery('do they have wifi?').contentTerms, ['wifi']);
@@ -479,10 +479,13 @@ test('follow-ups append previous city and category words', () => {
     assert.equal(isFollowUp('the second'), true);
     assert.equal(isFollowUp('First Commercial Bank'), false);
     assert.equal(isFollowUp('What about sushi?'), false);
+    assert.equal(isFollowUp('which of these is best for sushi late at night?'), false);
+    assert.equal(isFollowUp('just pick one coffee shop in Vientiane and tell me why'), false);
     assert.deepEqual(
         parseSearchQuery('I just landed in Vientiane, where should I get coffee?').contentTerms,
         ['vientiane', 'coffee']
     );
+    assert.ok(parseSearchQuery('just pick one coffee shop in Vientiane').contentTerms.includes('coffee shop'));
 
     assert.equal(reformulateWithHistory('cheaper?', history), 'cheaper? coffee');
     assert.equal(reformulateWithHistory('which is good for working?', history), 'which is good for working? coffee');
@@ -544,7 +547,8 @@ test('follow-up chips after a listing set stay on the set', () => {
         results: [VANMAI_COFFEE]
     });
     assert.ok(coffeeNoCity.includes('In Vientiane?'));
-    assert.ok(coffeeNoCity.includes('Any others?') || coffeeNoCity.includes('Open late?'));
+    assert.ok(coffeeNoCity.includes('Any others?'));
+    assert.ok(!coffeeNoCity.includes('Open late?'));
     assert.ok(!coffeeNoCity.some((chip) => /Hotels|Banks|Eat\?|Lawyers/i.test(chip)));
 
     const coffeeInCity = buildFollowUpChips({
@@ -553,8 +557,18 @@ test('follow-up chips after a listing set stay on the set', () => {
     });
     assert.equal(coffeeInCity.includes('In Vientiane?'), false);
     assert.ok(coffeeInCity.includes('Any others?'));
-    assert.ok(coffeeInCity.includes('Open late?'));
+    assert.ok(!coffeeInCity.includes('Open late?'));
     assert.ok(!coffeeInCity.some((chip) => /Hotels|Banks|Eat\?|Lawyers/i.test(chip)));
+
+    const threadLocked = buildFollowUpChips({
+        parsed: parseSearchQuery('best for sushi late at night'),
+        results: [],
+        threadHasCity: true,
+        canAnswerHours: false
+    });
+    assert.ok(!threadLocked.includes('Which city?'));
+    assert.ok(!threadLocked.includes('In Vientiane?'));
+    assert.ok(!threadLocked.includes('Open late?'));
 });
 
 test('coffee ranks cafe names above factory and machineries', () => {
@@ -587,6 +601,10 @@ test('japanese restaurant stays AND and does not return a western-only restauran
     assert.equal(nextRetryQuery(parsed), null);
     assert.deepEqual(parseSearchQuery('lao restaurant').contentTerms, ['lao', 'restaurant']);
     assert.equal(nextRetryQuery(parseSearchQuery('sushi restaurant')), null);
+    assert.deepEqual(
+        nextRetryQuery(parseSearchQuery('sushi coffee vientiane')).contentTerms,
+        ['sushi', 'vientiane']
+    );
 
     const sql = buildContentSearchSql(parsed, 'pg');
     assert.deepEqual(sql.params, ['%japanese%', '%restaurant%']);

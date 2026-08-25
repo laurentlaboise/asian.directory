@@ -38,7 +38,9 @@ const {
     namedCategoryConstraint,
     LOCATION_HINTS,
     EMPTY_LINE,
-    EMPTY_OUTSIDE_LINE
+    EMPTY_OUTSIDE_LINE,
+    CUISINE_STYLES,
+    nameLooksCafe
 } = require('./search-query');
 const { pickClarifyChips, mapListing } = require('./categories');
 const { STRICT_COPY_TOKENS, copyTokensInText } = require('./copy-tokens');
@@ -80,6 +82,12 @@ const MISSING_PRICE_REPLY = 'I don’t have prices for these places yet.';
 const NO_MORE_REPLY = 'I don’t have more listings in that city yet.';
 const CITY_CLARIFY_REPLY = 'Which city?';
 const OUTSIDE_COVERAGE_REPLY = 'Our strongest coverage is Southeast Asia and Laos — Vientiane and Luang Prabang especially.';
+const LIST_NO_RANK_REPLY = 'I can list matches. I don’t pick a favorite or invent a reason.';
+const GENERIC_NAME_TOKENS = new Set([
+    'coffee', 'cafe', 'cafes', 'house', 'shop', 'shops',
+    'company', 'ltd', 'limited', 'cooperative', 'co',
+    'restaurant', 'restaurants', 'hotel', 'hotels'
+]);
 
 const CLARIFY_CHIPS = {
     greeting: ['Eat?', 'Coffee?', 'Vientiane?'],
@@ -254,12 +262,128 @@ function specificCardReply(row) {
     return cardFactsReply(decoded);
 }
 
-function isAmenityFollowUp(query) {
+function queryHasAmenityCue(query) {
     const text = String(query || '');
-    if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
     if (/\bgood\s+for\b/i.test(text)) return true;
     return tokenize(text).some((token) => AMENITY_QUALITY_CUES.has(token));
 }
+
+function isCuisineAsk(query) {
+    return (parseSearchQuery(query).contentTerms || []).some((term) => CUISINE_STYLES.has(term));
+}
+
+function isAmenityFollowUp(query) {
+    const text = String(query || '');
+    if (!queryHasAmenityCue(text)) return false;
+    if (isCuisineAsk(text)) return false;
+    if (isCardRefFollowUp(text) || /\bdoes\b[\s\S]+\bhave\b/i.test(text)) return true;
+    if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
+    return true;
+}
+
+function isPickOneAsk(query) {
+    return /\bpick(\s+one)?\b/i.test(String(query || ''));
+}
+
+function isCompareAsk(query) {
+    return /\b(over|vs\.?|versus|compared to)\b/i.test(String(query || ''));
+}
+
+function splitCompareNames(query) {
+    const cleaned = String(query || '').replace(/^\s*why\s+/i, '').replace(/[?!.,]+$/g, '').trim();
+    return cleaned
+        .split(/\s+(?:over|vs\.?|versus|compared to)\s+/i)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 2);
+}
+
+function listingNameKeyTokens(name) {
+    return tokenize(name).filter((token) => (
+        !STOPWORDS_NAME.has(token)
+        && !GENERIC_NAME_TOKENS.has(token)
+        && token.length > 2
+    ));
+}
+
+const STOPWORDS_NAME = new Set(['the', 'and', 'of', 'for', 'in']);
+
+function queryMentionsListing(query, listing) {
+    const text = String(query || '').toLowerCase();
+    const name = String((listing && listing.name) || '').trim();
+    if (!name) return false;
+    if (name.length >= 6 && text.includes(name.toLowerCase())) return true;
+    const keys = listingNameKeyTokens(name);
+    if (!keys.length) return false;
+    const qTokens = new Set(tokenize(query));
+    return keys.every((token) => qTokens.has(token));
+}
+
+function listingsNamedInQuery(query, listings) {
+    return (listings || []).filter((row) => queryMentionsListing(query, row));
+}
+
+function looksSitDownCafe(row) {
+    const mapped = mapListing(row);
+    if (mapped && mapped.sub === 'cafe') return true;
+    return nameLooksCafe(row);
+}
+
+function isSitDownCoffeeAsk(query) {
+    return /\b(coffee\s+shop|coffee\s+house|cafes?|café|get coffee)\b/i.test(String(query || ''));
+}
+
+function preferSitDownCafes(rows, query) {
+    const list = rows || [];
+    if (!list.length || !isSitDownCoffeeAsk(query)) return list;
+    const cafes = list.filter(looksSitDownCafe);
+    const others = list.filter((row) => !looksSitDownCafe(row));
+    if (cafes.length && others.length) return cafes;
+    return list;
+}
+
+function historyHasCity(turns) {
+    return (turns || []).some((turn) => tokenize(turn).some((token) => LOCATION_HINTS.has(token)));
+}
+
+function isRedundantCityFollowUp(latest, historyTurns) {
+    if (!(historyTurns || []).length) return false;
+    const cities = tokenize(latest).filter((token) => LOCATION_HINTS.has(token));
+    if (!cities.length) return false;
+    const parsed = parseSearchQuery(latest);
+    const extra = (parsed.contentTerms || []).filter((term) => !LOCATION_HINTS.has(term));
+    if (extra.length) return false;
+    return cities.every((city) => historyTurns.some((turn) => tokenize(turn).includes(city)));
+}
+
+function emptyCuisineReply(query) {
+    const cuisine = (parseSearchQuery(query).contentTerms || []).find((term) => CUISINE_STYLES.has(term));
+    if (cuisine) return `Nothing in the directory for ${cuisine} yet.`;
+    return EMPTY_LINE;
+}
+
+function compareReply(listings) {
+    const names = (listings || []).map((row) => String((row && row.name) || '').trim()).filter(Boolean);
+    const city = (listings || []).map((row) => String((row && row.city) || '').trim()).find(Boolean) || '';
+    if (names.length >= 2 && city) {
+        return `${names.join(' and ')} are both listed in ${city}. I don’t rank them.`;
+    }
+    if (names.length >= 2) {
+        return `${names.join(' and ')} are both in the directory. I don’t rank them.`;
+    }
+    return LIST_NO_RANK_REPLY;
+}
+
+function pickOneReply({ listings, templateReply, shown }) {
+    if ((listings || []).length === 1 && shown && shown[0]) {
+        return specificCardReply(shown[0]);
+    }
+    const base = String(templateReply || '').replace(TOO_MANY_LINE_RE, '').trim();
+    const line = base || 'Here are matches.';
+    if (/don’t pick a favorite|do not pick/i.test(line)) return line;
+    return `${line} I don’t pick a favorite or invent a reason.`;
+}
+
+const TOO_MANY_LINE_RE = /Too many matches\. Showing a few\./gi;
 
 function isPriceFollowUp(query) {
     const text = String(query || '');
@@ -279,7 +403,8 @@ function isRefinementTurn(turn) {
     return isAmenityFollowUp(turn)
         || isPriceFollowUp(turn)
         || isMoreFollowUp(turn)
-        || isCardRefFollowUp(turn);
+        || isCardRefFollowUp(turn)
+        || isCompareAsk(turn);
 }
 
 function lastSpecifiedQuery(historyTurns) {
@@ -302,7 +427,8 @@ function isDeadEndAssistantReply(text) {
         || reply === NEED_CLARIFY_REPLY
         || reply === GREETING_REPLY
         || reply === CITY_CLARIFY_REPLY
-        || reply === OUTSIDE_COVERAGE_REPLY;
+        || reply === OUTSIDE_COVERAGE_REPLY
+        || /^Nothing in the directory for .+ yet\.$/i.test(reply);
 }
 
 function lastSuccessfulSpecifiedQuery(messages) {
@@ -400,11 +526,15 @@ function shouldClarify(latest, historyTurns) {
         isAmenityFollowUp(latest)
         || isPriceFollowUp(latest)
         || isCardRefFollowUp(latest)
+        || isCompareAsk(latest)
+        || isPickOneAsk(latest)
+        || isRedundantCityFollowUp(latest, historyTurns)
     )) {
         return null;
     }
     if ((historyTurns || []).length && isFollowUp(latest)) return null;
     if (isFoodThreadFollowUp(latest, historyTurns)) return null;
+    if (historyHasCity(historyTurns) && needsCityClarify(latest)) return null;
     if (needsCityClarify(latest)) return 'city';
     if (isAmenityFollowUp(latest)) return null;
     return detectClarifyKind(latest);
@@ -566,7 +696,7 @@ async function completeWithXai({ messages, listings, locale, apiKey, model, requ
     return postXaiChat({ apiKey, body, requestFn });
 }
 
-function searchPayload({ query, parsed, listings, truncated, retried }) {
+function searchPayload({ query, parsed, listings, truncated, retried, threadHasCity }) {
     const reply = buildAssistantLine({
         query,
         parsed,
@@ -574,7 +704,12 @@ function searchPayload({ query, parsed, listings, truncated, retried }) {
         truncated,
         retried
     });
-    const chips = buildFollowUpChips({ parsed, results: listings });
+    const chips = buildFollowUpChips({
+        parsed,
+        results: listings,
+        threadHasCity,
+        canAnswerHours: false
+    });
     return { reply, chips };
 }
 
@@ -616,8 +751,18 @@ async function handleChatRequest({
     const moreFollowUp = isMoreFollowUp(latest);
     const cardRefFollowUp = isCardRefFollowUp(latest);
     const foodThreadFollowUp = isFoodThreadFollowUp(latest, historyTurns);
+    const compareAsk = isCompareAsk(latest);
+    const pickOneAsk = isPickOneAsk(latest);
+    const redundantCity = isRedundantCityFollowUp(latest, historyTurns);
+    const threadCityLocked = historyHasCity(historyTurns) || tokenize(latest).some((token) => LOCATION_HINTS.has(token));
     const keepPriorListings = (
-        amenityFollowUp || priceFollowUp || moreFollowUp || cardRefFollowUp || foodThreadFollowUp
+        amenityFollowUp
+        || priceFollowUp
+        || moreFollowUp
+        || cardRefFollowUp
+        || foodThreadFollowUp
+        || compareAsk
+        || redundantCity
     ) && historyTurns.length > 0;
     let query = searchQueryFromMessages(normalized.messages);
     if (keepPriorListings) {
@@ -650,29 +795,87 @@ async function handleChatRequest({
         }
     }
 
+    if (compareAsk) {
+        const namedFromAll = listingsNamedInQuery(latest, all);
+        if (namedFromAll.length >= 2) {
+            all = namedFromAll;
+        } else if (typeof searchBusinesses === 'function') {
+            const collected = [];
+            const seen = new Set();
+            for (const name of splitCompareNames(latest)) {
+                try {
+                    const rows = await Promise.resolve(searchBusinesses(name));
+                    for (const row of (Array.isArray(rows) ? rows : [])) {
+                        const key = String((row && (row.id || row.name)) || '');
+                        if (!key || seen.has(key)) continue;
+                        if (!queryMentionsListing(name, row) && !queryMentionsListing(latest, row)) continue;
+                        seen.add(key);
+                        collected.push(row);
+                    }
+                } catch {
+                    // Skip a failed name search.
+                }
+            }
+            if (collected.length) all = collected;
+        }
+        if (threadCityLocked) {
+            const locked = tokenize([latest, ...historyTurns].join(' ')).filter((token) => LOCATION_HINTS.has(token));
+            if (locked.length) {
+                const kept = all.filter((row) => {
+                    const city = String((row && row.city) || '').toLowerCase();
+                    return locked.some((token) => city.includes(token));
+                });
+                if (kept.length) all = kept;
+            }
+        }
+    } else if (!compareAsk) {
+        all = preferSitDownCafes(all, keepPriorListings ? query : latest);
+    }
+
+    const namedShown = listingsNamedInQuery(latest, all);
+    if (namedShown.length && (amenityFollowUp || cardRefFollowUp || compareAsk)) {
+        all = namedShown;
+    } else if (amenityFollowUp && cardRefFollowUp && all.length) {
+        const idx = Math.max(0, cardRefIndex(latest, Math.min(all.length, CHAT_LISTING_LIMIT)));
+        all = [all[idx]].filter(Boolean);
+    }
+
     const offset = moreFollowUp ? moreFollowUpOffset(latest, historyTurns) : 0;
     const pageRows = all.slice(offset, offset + CHAT_LISTING_LIMIT);
     const noMoreInCity = moreFollowUp && !pageRows.length;
-    const shown = noMoreInCity ? all.slice(0, CHAT_LISTING_LIMIT) : pageRows;
-    const truncated = !moreFollowUp && all.length > CHAT_LISTING_LIMIT;
+    let shown = noMoreInCity ? all.slice(0, CHAT_LISTING_LIMIT) : pageRows;
+    const truncated = !moreFollowUp && !pickOneAsk && !compareAsk && !redundantCity && all.length > CHAT_LISTING_LIMIT;
     const listings = shown.map(publicListing).filter(Boolean);
     const modelListings = listings.map(listingForModel).filter(Boolean);
-    const template = searchPayload({ query, parsed, listings, truncated, retried: false });
+    const template = searchPayload({
+        query,
+        parsed,
+        listings,
+        truncated,
+        retried: false,
+        threadHasCity: threadCityLocked
+    });
     const safeLocale = normalizeLocale(locale);
-    const cardReply = cardRefFollowUp && shown.length
-        ? specificCardReply(shown[Math.max(0, cardRefIndex(latest, shown.length))])
+    const cardReply = cardRefFollowUp && shown.length && !amenityFollowUp
+        ? specificCardReply(namedShown.length ? namedShown[0] : shown[Math.max(0, cardRefIndex(latest, shown.length))])
         : '';
     const searchReply = priceFollowUp
         ? MISSING_PRICE_REPLY
         : (amenityFollowUp
             ? MISSING_AMENITY_REPLY
-            : (cardReply
-                ? cardReply
-                : (noMoreInCity
-                    ? NO_MORE_REPLY
-                    : (!listings.length && mentionsOutsideCoverage(query || latest)
-                        ? OUTSIDE_COVERAGE_REPLY
-                        : template.reply))));
+            : (compareAsk && listings.length
+                ? compareReply(listings)
+                : (pickOneAsk && listings.length
+                    ? pickOneReply({ listings, templateReply: template.reply, shown })
+                    : (cardReply
+                        ? cardReply
+                        : (noMoreInCity
+                            ? NO_MORE_REPLY
+                            : (!listings.length
+                                ? (mentionsOutsideCoverage(query || latest)
+                                    ? OUTSIDE_COVERAGE_REPLY
+                                    : emptyCuisineReply(latest || query))
+                                : template.reply))))));
 
     const respond = (mode, reply) => {
         const spoken = sanitizeSpokenReply(reply, modelListings);
@@ -691,7 +894,7 @@ async function handleChatRequest({
     };
 
     const apiKey = getChatApiKey(env);
-    if (!apiKey || amenityFollowUp || priceFollowUp || cardRefFollowUp || !modelListings.length) {
+    if (!apiKey || amenityFollowUp || priceFollowUp || cardRefFollowUp || compareAsk || pickOneAsk || !modelListings.length) {
         return respond('search', searchReply);
     }
 
@@ -742,8 +945,13 @@ module.exports = {
     cardRefIndex,
     isThinDescription,
     specificCardReply,
+    isCompareAsk,
+    isPickOneAsk,
+    listingsNamedInQuery,
+    preferSitDownCafes,
     lastSpecifiedQuery,
     lastSuccessfulSpecifiedQuery,
+    LIST_NO_RANK_REPLY,
     moreFollowUpOffset,
     needsCityClarify,
     requestedStrictCopyTokens,

@@ -457,7 +457,10 @@
 
         const buildFollowUpChips = (terms, results) => {
             const category = (terms || []).find((term) => !CHAT_LOCATION_HINTS.has(term)) || '';
-            const hasCity = (terms || []).some((term) => CHAT_LOCATION_HINTS.has(term));
+            const threadHasCity = (userTurns || []).some((turn) => (
+                chatTokens(turn).some((token) => CHAT_LOCATION_HINTS.has(token))
+            ));
+            const hasCity = threadHasCity || (terms || []).some((term) => CHAT_LOCATION_HINTS.has(term));
             const chips = [];
             const hasResults = (results || []).length > 0;
             if (!hasCity) {
@@ -468,7 +471,6 @@
             }
             if (hasResults) {
                 if (!chips.includes('Any others?')) chips.push('Any others?');
-                if (!chips.includes('Open late?')) chips.push('Open late?');
             } else if (category && !chips.includes('Any others?')) {
                 chips.push('Any others?');
             }

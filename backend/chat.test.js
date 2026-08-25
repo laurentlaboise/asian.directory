@@ -19,6 +19,7 @@ const {
     isCardRefFollowUp,
     isThinDescription,
     specificCardReply,
+    LIST_NO_RANK_REPLY,
     detectClarifyKind,
     shouldClarify,
     buildSystemPrompt,
@@ -987,7 +988,7 @@ const FIRST_FOOD = {
 const ASTER_COFFEE = {
     id: 1662,
     name: 'ASTER COFFEE HOUSE',
-    category: 'Food & Beverages',
+    category: 'coffee shop',
     description: 'ASTER COFFEE HOUSE is a public listing in Vientiane.',
     address: 'Vientiane, Laos',
     country: 'LA',
@@ -1010,6 +1011,42 @@ const COMMA_COFFEE = {
     status: 'active'
 };
 
+const SAFFRON_COFFEE_VT = {
+    id: 1666,
+    name: 'Saffron Coffee',
+    category: 'Business Services',
+    description: 'Saffron Coffee is a public listing in Vientiane.',
+    address: 'Vientiane, Laos',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: ['coffee'],
+    status: 'active'
+};
+
+const SAFFRON_COFFEE_LP = {
+    id: 9301,
+    name: 'Saffron Coffee Luang Prabang',
+    category: 'Business Services',
+    description: 'Saffron Coffee Luang Prabang is a public listing.',
+    address: 'Luang Prabang, Laos',
+    country: 'LA',
+    city: 'Luang Prabang',
+    keywords: ['coffee'],
+    status: 'active'
+};
+
+const CHAMPASAK_COFFEE = {
+    id: 9302,
+    name: 'Champasak Coffee Works',
+    category: 'Manufacture',
+    description: 'Champasak Coffee Works is a public listing.',
+    address: 'Champasak, Laos',
+    country: 'LA',
+    city: 'Champasak',
+    keywords: ['coffee'],
+    status: 'active'
+};
+
 function coffeeTranscriptCatalog() {
     const extraCoffee = Array.from({ length: 5 }, (_, i) => ({
         ...VANMAI_COFFEE,
@@ -1023,6 +1060,9 @@ function coffeeTranscriptCatalog() {
         YUNI_COFFEE,
         ASTER_COFFEE,
         COMMA_COFFEE,
+        SAFFRON_COFFEE_VT,
+        SAFFRON_COFFEE_LP,
+        CHAMPASAK_COFFEE,
         ...extraCoffee,
         FIRST_COMMERCIAL_BANK,
         FIRST_PACIFIC_MINING,
@@ -1084,6 +1124,14 @@ test('card-ref follow-ups are not a new keyword search', () => {
     assert.equal(isCardRefFollowUp('the second'), true);
     assert.equal(isCardRefFollowUp('First Commercial Bank'), false);
     assert.equal(isCardRefFollowUp('What about sushi?'), false);
+    assert.equal(
+        isCardRefFollowUp('tell me about the first one — does ASTER COFFEE HOUSE have wifi?'),
+        true
+    );
+    assert.equal(
+        isAmenityFollowUp('tell me about the first one — does ASTER COFFEE HOUSE have wifi?'),
+        true
+    );
     assert.equal(shouldClarify('Tell me about the first one', ['coffee in Vientiane']), null);
     assert.equal(shouldClarify("I'm hungry", ['coffee in Vientiane']), null);
     assert.equal(shouldClarify("I'm hungry", []), 'food');
@@ -1121,6 +1169,8 @@ test('tell me about the first one stays on coffee cards, not banks or mines', as
     assert.equal(coffee.body.listings.some((row) => /First Commercial Bank|First Pacific Mining|First Food/i.test(row.name)), false);
     assert.ok(coffee.body.listings.every((row) => /coffee/i.test(row.name)));
     assert.ok(!coffee.body.chips.some((chip) => /Hotels\?|Banks\?|Eat\?|Lawyers\?/i.test(chip)));
+    assert.ok(!coffee.body.chips.includes('In Vientiane?'));
+    assert.ok(!coffee.body.chips.includes('Open late?'));
 
     const wifi = await step('One with wifi if you have that');
     assert.equal(wifi.body.reply, MISSING_AMENITY_REPLY);
@@ -1146,7 +1196,8 @@ test('tell me about the first one stays on coffee cards, not banks or mines', as
 
     const sushi = await step('What about sushi?');
     assert.equal(sushi.body.listings.length, 0);
-    assert.equal(sushi.body.reply, EMPTY_LINE);
+    assert.match(sushi.body.reply, /sushi|Nothing in the directory/i);
+    assert.doesNotMatch(sushi.body.reply, /\bbest\b|#1|top-rated/i);
 
     const hungry = await step("I'm hungry though");
     assert.notEqual(hungry.body.mode, 'clarify');
@@ -1227,4 +1278,77 @@ test('a real First Commercial Bank name still searches that business', async () 
     assert.ok(result.body.listings.some((row) => row.name === 'First Commercial Bank'));
     assert.equal(result.body.listings.some((row) => /coffee/i.test(row.name)), false);
 });
+
+test('second live transcript: city chip, ASTER wifi, sushi, pick one, named compare', async () => {
+    const messages = [];
+    const searched = [];
+    const step = async (text) => {
+        messages.push({ role: 'user', content: text });
+        const result = await handleChatRequest({
+            messages,
+            env: {},
+            searchBusinesses: async (query) => {
+                searched.push(query);
+                return searchTranscriptCatalog(query);
+            }
+        });
+        messages.push({ role: 'assistant', content: result.body.reply });
+        return result;
+    };
+
+    const coffee = await step('I just landed in Vientiane, where should I get coffee?');
+    assert.ok(coffee.body.listings.length > 0);
+    assert.ok(coffee.body.listings.every((row) => looksLikeCafeOrCoffee(row)));
+    assert.ok(!coffee.body.chips.includes('In Vientiane?'));
+    assert.ok(!coffee.body.chips.includes('Open late?'));
+    assert.ok(!coffee.body.chips.includes('Which city?'));
+    if (coffee.body.listings.some((row) => /ASTER COFFEE HOUSE/i.test(row.name))) {
+        assert.equal(coffee.body.listings.some((row) => /Vanmai Coffee Cooperative|Yuni Coffee Company/i.test(row.name)), false);
+    }
+
+    const cityChip = await step('In Vientiane?');
+    assert.deepEqual(cityChip.body.listings.map((row) => row.name), coffee.body.listings.map((row) => row.name));
+    assert.ok(!cityChip.body.chips.includes('In Vientiane?'));
+    assert.ok(!cityChip.body.chips.includes('Which city?'));
+    assert.doesNotMatch(cityChip.body.reply, /Too many matches/i);
+
+    const asterWifi = await step('tell me about the first one — does ASTER COFFEE HOUSE have wifi?');
+    assert.equal(asterWifi.body.listings.length, 1);
+    assert.equal(asterWifi.body.listings[0].name, 'ASTER COFFEE HOUSE');
+    assert.equal(asterWifi.body.reply, MISSING_AMENITY_REPLY);
+    assert.doesNotMatch(asterWifi.body.reply, /Nothing in the directory|Try a name/i);
+    assert.doesNotMatch(asterWifi.body.reply, /wifi|hours|best|#1|notes|excellent/i);
+    assert.ok(!JSON.stringify(asterWifi.body).includes('staff say wifi'));
+    assert.ok(searched.every((query) => !/\bwifi\b/i.test(query) || /coffee/i.test(query)));
+
+    const sushi = await step('which of these is best for sushi late at night?');
+    assert.equal(sushi.body.listings.length, 0);
+    assert.match(sushi.body.reply, /sushi/i);
+    assert.doesNotMatch(sushi.body.reply, /\bbest\b|#1|top-rated/i);
+    assert.ok(!sushi.body.chips.includes('Which city?'));
+    assert.ok(!sushi.body.chips.includes('In Vientiane?'));
+    assert.ok(!sushi.body.chips.includes('Open late?'));
+
+    const pick = await step('just pick one coffee shop in Vientiane and tell me why');
+    assert.ok(pick.body.listings.length > 0);
+    assert.ok(pick.body.listings.every((row) => /coffee shop|coffee house|cafe|café/i.test(`${row.name} ${row.category} ${(row.taxonomy && row.taxonomy.sub) || ''}`)));
+    assert.equal(pick.body.listings.some((row) => /Vanmai Coffee Cooperative|Yuni Coffee Company/i.test(row.name)), false);
+    assert.doesNotMatch(pick.body.reply, /Too many matches/i);
+    assert.doesNotMatch(pick.body.reply, /\bbest\b|because it(?:'s| is) the/i);
+    assert.match(pick.body.reply, /listed|matches|don’t pick|do not pick|I don’t pick/i);
+    assert.doesNotMatch(pick.body.reply, /wifi|hours|notes/i);
+
+    const compare = await step('why Comma Coffee over Saffron Coffee?');
+    const compareNames = compare.body.listings.map((row) => row.name).sort();
+    assert.deepEqual(compareNames, ['Comma Coffee', 'Saffron Coffee']);
+    assert.ok(compare.body.listings.every((row) => /vientiane/i.test(row.city)));
+    assert.equal(compare.body.listings.some((row) => /luang prabang|champasak/i.test(`${row.city} ${row.name}`)), false);
+    assert.doesNotMatch(compare.body.reply, /\bbest\b|better|because/i);
+    assert.match(compare.body.reply, /don’t rank|do not rank/i);
+    assert.doesNotMatch(compare.body.reply, /wifi|hours|notes|Luang Prabang|Champasak/i);
+});
+
+function looksLikeCafeOrCoffee(row) {
+    return /coffee|cafe|café/i.test(`${row.name} ${row.category}`);
+}
 

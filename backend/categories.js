@@ -126,6 +126,8 @@ const INDUSTRY_PARENTS = new Set(['industry_agriculture', 'construction']);
 
 const QUERY_PARENTS = {
     coffee: 'food_drink',
+    'coffee shop': 'food_drink',
+    'coffee house': 'food_drink',
     cafe: 'food_drink',
     cafes: 'food_drink',
     restaurant: 'food_drink',
@@ -157,6 +159,8 @@ const QUERY_ALIASES = {
     restaurant: ['restaurant'],
     cafes: ['cafes', 'cafe'],
     cafe: ['cafe'],
+    'coffee shop': ['coffee shop', 'coffee house', 'cafe', 'café', 'coffee'],
+    'coffee house': ['coffee house', 'coffee shop', 'cafe', 'café', 'coffee'],
     hotels: ['hotels', 'hotel'],
     hotel: ['hotel'],
     lawyers: ['lawyers', 'lawyer', 'legal'],
@@ -179,7 +183,7 @@ const CATEGORY_RULES = [
     { re: /\blaotian\b/, sub: 'lao' },
     { re: /\bthai\b/, sub: 'thai' },
     { re: /\bwestern\b/, sub: 'western' },
-    { re: /\b(coffee\s+shop|cafes?|café)\b/i, sub: 'cafe' },
+    { re: /\b(coffee\s+shop|coffee\s+house|cafes?|café)\b/i, sub: 'cafe' },
     { re: /\brestaurants?\b/, sub: 'restaurant' },
     { re: /\b(cocktail\s+bar|bars?)\b/, sub: 'bar' },
     { re: /\bbakery\b/, sub: 'bakery' },
@@ -406,17 +410,22 @@ const NAMED_CATEGORY_TOKENS = {
     restaurants: { primary: 'food_drink', subs: RESTAURANT_SUBS },
     cafe: { primary: 'food_drink', subs: CAFE_SUBS },
     cafes: { primary: 'food_drink', subs: CAFE_SUBS },
+    'coffee shop': { primary: 'food_drink', subs: CAFE_SUBS },
+    'coffee house': { primary: 'food_drink', subs: CAFE_SUBS },
     coffee: { primary: 'food_drink', subs: CAFE_SUBS, soft: true }
 };
 
 function namedCategoryConstraint(terms) {
-    for (const term of terms || []) {
-        const key = String(term || '').toLowerCase();
-        if (NAMED_CATEGORY_TOKENS[key]) {
-            return { token: key, ...NAMED_CATEGORY_TOKENS[key] };
-        }
+    const keys = (terms || []).map((term) => String(term || '').toLowerCase());
+    let soft = null;
+    for (const key of keys) {
+        const spec = NAMED_CATEGORY_TOKENS[key];
+        if (!spec) continue;
+        const row = { token: key, ...spec };
+        if (!row.soft) return row;
+        if (!soft) soft = row;
     }
-    return null;
+    return soft;
 }
 
 function isCategoryToken(term) {
@@ -458,7 +467,12 @@ function rowMatchesNamedCategory(row, constraint) {
         return /\b(construction|contractor|builder|scaffolding)\b/.test(face);
     }
 
-    if (constraint.token === 'cafe' || constraint.token === 'cafes') {
+    if (
+        constraint.token === 'cafe'
+        || constraint.token === 'cafes'
+        || constraint.token === 'coffee shop'
+        || constraint.token === 'coffee house'
+    ) {
         if (CAFE_SUBS.has(mapped.sub)) return true;
         return /\b(coffee\s+shop|coffee\s+house|cafes?|café)\b/i.test(nameHay(row));
     }
