@@ -48,11 +48,15 @@ const STOPWORDS = new Set([
     'best', 'better', 'good', 'great', 'need', 'want', 'some',
     'places', 'place', 'spot', 'spots', 'shop', 'shops',
     'hello', 'hi', 'hey', 'i', 'my', 'our',
+    'just', 'get', 'got', 'landed', 'arrived', 'something',
     // Follow-up / filler words. They refine a prior turn; they are not listing text.
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'business', 'businesses',
-    'ones', 'company', 'companies',
+    'ones', 'one', 'company', 'companies',
+    // Card-reference leftovers. "the first one" is not a business named First.
+    'tell', 'first', 'second', 'third', 'fourth', 'fifth',
+    'sixth', 'seventh', 'eighth', 'last', 'that', 'this', 'though',
     // Vague / junk tokens. Do not AND these into SQL or treat them as a category.
     'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help',
     // Amenity / quality follow-ups that are still not listing text.
@@ -71,9 +75,40 @@ const FOLLOW_UP_CUES = new Set([
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
     'reviews', 'review', 'laptop', 'laptops',
-    'ones', 'family', 'families', 'kids', 'children',
-    'price', 'prices', 'parking'
+    'ones', 'one', 'family', 'families', 'kids', 'children',
+    'price', 'prices', 'parking',
+    'that', 'this', 'though'
 ]);
+
+const CARD_REF_ORDINALS = {
+    first: 0,
+    '1st': 0,
+    second: 1,
+    '2nd': 1,
+    third: 2,
+    '3rd': 2,
+    fourth: 3,
+    '4th': 3,
+    fifth: 4,
+    '5th': 4,
+    sixth: 5,
+    '6th': 5,
+    seventh: 6,
+    '7th': 6,
+    eighth: 7,
+    '8th': 7,
+    last: -1
+};
+
+const CARD_REF_NOUNS = new Set([
+    'one', 'ones', 'listing', 'listings', 'place', 'places',
+    'spot', 'spots', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'hotel', 'hotels', 'card', 'cards', 'result', 'results',
+    'match', 'matches', 'option', 'options'
+]);
+
+const CARD_REF_POINTERS = new Set(['that', 'this', 'it', 'them']);
+const CARD_REF_VERBS = new Set(['tell', 'about', 'what', 'how']);
 
 const {
     SEARCHABLE_COPY_TOKENS,
@@ -454,8 +489,55 @@ function mentionsOutsideCoverage(query) {
     return tokenize(query).some((token) => OUT_OF_COVERAGE.has(token));
 }
 
+function isCardRefFollowUp(query) {
+    const text = String(query || '').trim();
+    if (!text || isGreeting(text)) return false;
+
+    const tokens = tokenize(text);
+    if (!tokens.length) return false;
+
+    const leftover = tokens.filter((token) => (
+        !STOPWORDS.has(token)
+        && !GREETINGS.has(token)
+        && !FOLLOW_UP_CUES.has(token)
+        && !CARD_REF_NOUNS.has(token)
+        && CARD_REF_ORDINALS[token] === undefined
+        && !CARD_REF_POINTERS.has(token)
+        && !CARD_REF_VERBS.has(token)
+        && !COUNTRY_GENERICS[token]
+        && token.length > 2
+    ));
+    if (leftover.length) return false;
+
+    if (/\b(tell me about|what about|how about|how(?:'|’)s|how is)\s+(it|that|this|them)\b/i.test(text)) {
+        return true;
+    }
+    if (/^(it|that|this)[.!?]*$/i.test(text)) return true;
+
+    const hasOrdinal = tokens.some((token) => CARD_REF_ORDINALS[token] !== undefined);
+    const hasNoun = tokens.some((token) => CARD_REF_NOUNS.has(token));
+    const hasPointer = tokens.some((token) => CARD_REF_POINTERS.has(token));
+    if (hasOrdinal) return true;
+    if (hasPointer && (hasNoun || tokens.length <= 3)) return true;
+    return false;
+}
+
+function cardRefIndex(query, count) {
+    const size = Number(count) || 0;
+    if (size <= 0) return -1;
+    const tokens = tokenize(query);
+    for (const token of tokens) {
+        if (CARD_REF_ORDINALS[token] === undefined) continue;
+        const raw = CARD_REF_ORDINALS[token];
+        if (raw === -1) return size - 1;
+        return raw < size ? raw : 0;
+    }
+    return 0;
+}
+
 function isFollowUp(query) {
     if (isGreeting(query)) return false;
+    if (isCardRefFollowUp(query)) return true;
     if (/\bgood\s+for\b/i.test(String(query || ''))) return true;
     const tokens = tokenize(query);
     if (!tokens.length) return false;
@@ -936,32 +1018,23 @@ function buildFollowUpChips({ parsed, results }) {
     )) || '';
     const hasCity = terms.some((term) => LOCATION_HINTS.has(term));
     const chips = [];
+    const hasResults = (results || []).length > 0;
 
-    if (!category && !hasCity && !(results || []).length) {
+    if (!category && !hasCity && !hasResults) {
         chips.push('Which city?');
         return chips;
     }
 
-    if (category === 'coffee' && !hasCity) {
-        chips.push('In Vientiane?');
-        chips.push('Hotels instead?');
-    } else if (category === 'coffee') {
-        chips.push('Any others?');
-        chips.push('In Vientiane?');
-    } else {
-        if (!hasCity) {
-            const city = dominantCityName(results);
-            if (city) chips.push(`In ${city}?`);
-            else chips.push('Which city?');
-        }
-        if (category === 'hotel' || category === 'hotels' || category === 'stay') {
-            chips.push('Coffee instead?');
-        } else if (category && !chips.some((chip) => /^In /i.test(chip))) {
-            chips.push('In Vientiane?');
-        }
+    // After a listing set, stay on that set. Do not restart eat/drink/stay
+    // or jump to Hotels? / banks. Re-offer a city only when none was asked.
+    if (!hasCity) {
+        const city = dominantCityName(results);
+        if (city) chips.push(`In ${city}?`);
+        else if (!hasResults) chips.push('Which city?');
+        else chips.push('In Vientiane?');
     }
 
-    if ((results || []).length) {
+    if (hasResults) {
         if (!chips.includes('Any others?')) chips.push('Any others?');
         if (!chips.includes('Open late?')) chips.push('Open late?');
     } else if (category && !chips.includes('Any others?')) {
@@ -975,6 +1048,8 @@ module.exports = {
     STOPWORDS,
     GREETINGS,
     FOLLOW_UP_CUES,
+    CARD_REF_ORDINALS,
+    CARD_REF_NOUNS,
     COUNTRY_GENERICS,
     LOCATION_HINTS,
     OUT_OF_COVERAGE,
@@ -1001,6 +1076,8 @@ module.exports = {
     termAliases,
     isGreeting,
     isFollowUp,
+    isCardRefFollowUp,
+    cardRefIndex,
     mentionsOutsideCoverage,
     reformulateWithHistory,
     parseHistoryParam,

@@ -472,6 +472,17 @@ test('follow-ups append previous city and category words', () => {
     assert.equal(isFollowUp('in Vientiane only'), true);
     assert.equal(isFollowUp('best coffee places'), false);
     assert.equal(isFollowUp('hello'), false);
+    assert.equal(isFollowUp('tell me about the first one'), true);
+    assert.equal(isFollowUp('Tell me about it'), true);
+    assert.equal(isFollowUp('that one'), true);
+    assert.equal(isFollowUp('that cafe'), true);
+    assert.equal(isFollowUp('the second'), true);
+    assert.equal(isFollowUp('First Commercial Bank'), false);
+    assert.equal(isFollowUp('What about sushi?'), false);
+    assert.deepEqual(
+        parseSearchQuery('I just landed in Vientiane, where should I get coffee?').contentTerms,
+        ['vientiane', 'coffee']
+    );
 
     assert.equal(reformulateWithHistory('cheaper?', history), 'cheaper? coffee');
     assert.equal(reformulateWithHistory('which is good for working?', history), 'which is good for working? coffee');
@@ -527,13 +538,23 @@ test('assistant line changes with the prompt and never invents a name', () => {
     }), WEAK_LINE);
 });
 
-test('follow-up chips after coffee point at Vientiane and hotels', () => {
-    const chips = buildFollowUpChips({
+test('follow-up chips after a listing set stay on the set', () => {
+    const coffeeNoCity = buildFollowUpChips({
         parsed: parseSearchQuery('best coffee places'),
         results: [VANMAI_COFFEE]
     });
-    assert.ok(chips.includes('In Vientiane?'));
-    assert.ok(chips.includes('Hotels instead?'));
+    assert.ok(coffeeNoCity.includes('In Vientiane?'));
+    assert.ok(coffeeNoCity.includes('Any others?') || coffeeNoCity.includes('Open late?'));
+    assert.ok(!coffeeNoCity.some((chip) => /Hotels|Banks|Eat\?|Lawyers/i.test(chip)));
+
+    const coffeeInCity = buildFollowUpChips({
+        parsed: parseSearchQuery('coffee in Vientiane'),
+        results: [VANMAI_COFFEE]
+    });
+    assert.equal(coffeeInCity.includes('In Vientiane?'), false);
+    assert.ok(coffeeInCity.includes('Any others?'));
+    assert.ok(coffeeInCity.includes('Open late?'));
+    assert.ok(!coffeeInCity.some((chip) => /Hotels|Banks|Eat\?|Lawyers/i.test(chip)));
 });
 
 test('coffee ranks cafe names above factory and machineries', () => {
@@ -974,7 +995,7 @@ test('follow-up chips never repeat In Vientiane', () => {
         parsed: parseSearchQuery('coffee in Vientiane'),
         results: [VANMAI_COFFEE]
     });
-    assert.equal(coffeeCity.filter((chip) => chip === 'In Vientiane?').length, 1);
+    assert.equal(coffeeCity.filter((chip) => chip === 'In Vientiane?').length, 0);
     assert.deepEqual(coffeeCity, uniqueChips(coffeeCity));
 });
 

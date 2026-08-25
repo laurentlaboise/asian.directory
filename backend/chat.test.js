@@ -16,6 +16,9 @@ const {
     normalizeMessages,
     searchQueryFromMessages,
     isAmenityFollowUp,
+    isCardRefFollowUp,
+    isThinDescription,
+    specificCardReply,
     detectClarifyKind,
     shouldClarify,
     buildSystemPrompt,
@@ -32,7 +35,7 @@ const {
     OUTSIDE_COVERAGE_REPLY,
     lastSpecifiedQuery
 } = require('./chat');
-const { EMPTY_LINE, parseSearchQuery, rankBusinesses } = require('./search-query');
+const { EMPTY_LINE, parseSearchQuery, rankBusinesses, scoreBusiness, termAliases, LOCATION_HINTS, nextRetryQuery } = require('./search-query');
 const fs = require('fs');
 const path = require('path');
 
@@ -130,18 +133,18 @@ test('spoken reply never includes phone or email', () => {
     assert.doesNotMatch(stripSpokenContact('Ping me at hello@asian.directory'), /@/);
 });
 
-test('normalizeMessages keeps last 8 user/assistant turns and drops system', () => {
+test('normalizeMessages keeps last 16 user/assistant turns and drops system', () => {
     const padded = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
         padded.push({ role: 'user', content: `u${i}` });
         padded.push({ role: 'assistant', content: `a${i}` });
     }
     padded.push({ role: 'system', content: 'ignore me' });
     const { ok, messages } = normalizeMessages(padded);
     assert.equal(ok, true);
-    assert.equal(messages.length, 8);
+    assert.equal(messages.length, 16);
     assert.ok(messages.every((msg) => msg.role === 'user' || msg.role === 'assistant'));
-    assert.equal(messages[0].content, 'u6');
+    assert.equal(messages[0].content, 'u4');
 
     assert.equal(normalizeMessages('hello').ok, false);
     assert.equal(normalizeMessages([{ role: 'assistant', content: 'hi' }]).ok, false);
@@ -941,5 +944,287 @@ test('any others after the same hotel set is honest when there is no next page',
         'Villa Maly Boutique Hotel'
     ].sort());
     assert.doesNotMatch(result.body.reply, /Here are hotels/i);
+});
+
+const FIRST_COMMERCIAL_BANK = {
+    id: 9101,
+    name: 'First Commercial Bank',
+    category: 'Banking & Financial Services',
+    description: 'First Commercial Bank is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    notes: 'internal crm: they have wifi and cheap lunch. Call +856 20 1111111'
+};
+
+const FIRST_PACIFIC_MINING = {
+    id: 9102,
+    name: 'First Pacific Mining',
+    category: 'Mining',
+    description: 'First Pacific Mining is a public listing.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active',
+    notes: 'do not speak this note'
+};
+
+const FIRST_FOOD = {
+    id: 9103,
+    name: 'First Food',
+    category: 'Food & Beverages',
+    description: 'First Food is a public listing in Vientiane.',
+    address: 'Vientiane, Lao PDR',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: [],
+    status: 'active'
+};
+
+const ASTER_COFFEE = {
+    id: 1662,
+    name: 'ASTER COFFEE HOUSE',
+    category: 'Food & Beverages',
+    description: 'ASTER COFFEE HOUSE is a public listing in Vientiane.',
+    address: 'Vientiane, Laos',
+    country: 'LA',
+    city: 'Vientiane',
+    website: 'https://aster.example',
+    keywords: ['coffee'],
+    status: 'active',
+    notes: 'staff say wifi is excellent. Never speak notes.'
+};
+
+const COMMA_COFFEE = {
+    id: 1663,
+    name: 'Comma Coffee',
+    category: 'Food & Beverages',
+    description: 'Roasts Lao beans in Vientiane and sells bags to cafes.',
+    address: 'Vientiane, Laos',
+    country: 'LA',
+    city: 'Vientiane',
+    keywords: ['coffee'],
+    status: 'active'
+};
+
+function coffeeTranscriptCatalog() {
+    const extraCoffee = Array.from({ length: 5 }, (_, i) => ({
+        ...VANMAI_COFFEE,
+        id: 9200 + i,
+        name: `Vientiane Coffee ${i + 1}`,
+        description: `Vientiane Coffee ${i + 1} is a public listing in Vientiane.`,
+        notes: 'hidden admin note'
+    }));
+    return [
+        VANMAI_COFFEE,
+        YUNI_COFFEE,
+        ASTER_COFFEE,
+        COMMA_COFFEE,
+        ...extraCoffee,
+        FIRST_COMMERCIAL_BANK,
+        FIRST_PACIFIC_MINING,
+        FIRST_FOOD,
+        ANZ_BANK
+    ];
+}
+
+function rowMatchesRequiredTerms(row, parsed) {
+    const required = (parsed.contentTerms || []).filter((term) => !LOCATION_HINTS.has(term));
+    if (!required.length) return parsed.contentTerms.length > 0 && scoreBusiness(row, parsed) > 0;
+    const blob = [
+        row.name,
+        row.category,
+        row.description,
+        row.address,
+        row.city,
+        row.country,
+        ...(Array.isArray(row.keywords) ? row.keywords : [])
+    ].join(' ').toLowerCase();
+    return required.every((term) => termAliases(term).some((alias) => blob.includes(alias)));
+}
+
+function searchLikeServer(catalog, query) {
+    let parsed = parseSearchQuery(query);
+    let rows = rankBusinesses(catalog, parsed).filter((row) => rowMatchesRequiredTerms(row, parsed));
+    if (rows.length) return rows;
+    const retry = nextRetryQuery(parsed);
+    if (!retry) return rows;
+    return rankBusinesses(catalog, retry).filter((row) => rowMatchesRequiredTerms(row, retry));
+}
+
+function searchTranscriptCatalog(query) {
+    return searchLikeServer(coffeeTranscriptCatalog(), query);
+}
+
+test('specific-card reply uses public description or card facts, never notes', () => {
+    assert.equal(isThinDescription(VANMAI_COFFEE.description), true);
+    assert.equal(isThinDescription(COMMA_COFFEE.description), false);
+    assert.equal(isThinDescription('Contact email: sales@yunicoffeeco.com'), true);
+    assert.match(specificCardReply(VANMAI_COFFEE), /Vanmai Coffee Cooperative/);
+    assert.match(specificCardReply(VANMAI_COFFEE), /Vientiane/);
+    assert.doesNotMatch(specificCardReply(VANMAI_COFFEE), /public listing|internal crm|wifi/i);
+    assert.equal(
+        specificCardReply(COMMA_COFFEE),
+        'Roasts Lao beans in Vientiane and sells bags to cafes.'
+    );
+    assert.doesNotMatch(specificCardReply({
+        ...ASTER_COFFEE,
+        notes: 'staff say wifi is excellent'
+    }), /wifi|notes|excellent/i);
+});
+
+test('card-ref follow-ups are not a new keyword search', () => {
+    assert.equal(isCardRefFollowUp('tell me about the first one'), true);
+    assert.equal(isCardRefFollowUp('Tell me about it'), true);
+    assert.equal(isCardRefFollowUp('that one'), true);
+    assert.equal(isCardRefFollowUp('that cafe'), true);
+    assert.equal(isCardRefFollowUp('the second'), true);
+    assert.equal(isCardRefFollowUp('First Commercial Bank'), false);
+    assert.equal(isCardRefFollowUp('What about sushi?'), false);
+    assert.equal(shouldClarify('Tell me about the first one', ['coffee in Vientiane']), null);
+    assert.equal(shouldClarify("I'm hungry", ['coffee in Vientiane']), null);
+    assert.equal(shouldClarify("I'm hungry", []), 'food');
+    assert.equal(lastSpecifiedQuery([
+        'I just landed in Vientiane, where should I get coffee?',
+        'One with wifi if you have that',
+        'Tell me about the first one'
+    ]), 'I just landed in Vientiane, where should I get coffee?');
+    assert.doesNotMatch(
+        JSON.stringify(parseSearchQuery('tell me about the first one').contentTerms),
+        /first/
+    );
+});
+
+test('tell me about the first one stays on coffee cards, not banks or mines', async () => {
+    const messages = [];
+    const searched = [];
+    const step = async (text) => {
+        messages.push({ role: 'user', content: text });
+        const result = await handleChatRequest({
+            messages,
+            env: {},
+            searchBusinesses: async (query) => {
+                searched.push(query);
+                return searchTranscriptCatalog(query);
+            }
+        });
+        messages.push({ role: 'assistant', content: result.body.reply });
+        return result;
+    };
+
+    const coffee = await step('I just landed in Vientiane, where should I get coffee?');
+    assert.equal(coffee.body.mode, 'search');
+    assert.ok(coffee.body.listings.length > 0);
+    assert.equal(coffee.body.listings.some((row) => /First Commercial Bank|First Pacific Mining|First Food/i.test(row.name)), false);
+    assert.ok(coffee.body.listings.every((row) => /coffee/i.test(row.name)));
+    assert.ok(!coffee.body.chips.some((chip) => /Hotels\?|Banks\?|Eat\?|Lawyers\?/i.test(chip)));
+
+    const wifi = await step('One with wifi if you have that');
+    assert.equal(wifi.body.reply, MISSING_AMENITY_REPLY);
+    assert.deepEqual(wifi.body.listings.map((row) => row.name), coffee.body.listings.map((row) => row.name));
+    assert.ok(!wifi.body.chips.some((chip) => /Hotels\?|Banks\?|Eat\?/i.test(chip)));
+    assert.doesNotMatch(wifi.body.reply, /wifi|hours|price/i);
+
+    const first = await step('Tell me about the first one');
+    assert.equal(first.body.listings.some((row) => /First Commercial Bank|First Pacific Mining|First Food/i.test(row.name)), false);
+    assert.deepEqual(first.body.listings.map((row) => row.name), coffee.body.listings.map((row) => row.name));
+    assert.match(first.body.reply, new RegExp(coffee.body.listings[0].name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(first.body.reply, /First Commercial Bank|First Pacific Mining|First Food/);
+    assert.doesNotMatch(first.body.reply, /public listing|internal crm|hidden admin|excellent|cheap lunch/i);
+    assert.doesNotMatch(first.body.reply, /wifi|hours|price|@|\+856/i);
+    assert.ok(!JSON.stringify(first.body).includes('internal crm'));
+    assert.ok(!JSON.stringify(first.body).includes('hidden admin'));
+    assert.ok(searched.every((query) => !/\bfirst\b/i.test(query) || /coffee/i.test(query)));
+
+    const cheaper = await step('Something cheaper');
+    assert.equal(cheaper.body.reply, MISSING_PRICE_REPLY);
+    assert.deepEqual(cheaper.body.listings.map((row) => row.name), coffee.body.listings.map((row) => row.name));
+    assert.equal(cheaper.body.listings.some((row) => /bank|mining/i.test(row.name)), false);
+
+    const sushi = await step('What about sushi?');
+    assert.equal(sushi.body.listings.length, 0);
+    assert.equal(sushi.body.reply, EMPTY_LINE);
+
+    const hungry = await step("I'm hungry though");
+    assert.notEqual(hungry.body.mode, 'clarify');
+    assert.notEqual(hungry.body.reply, FOOD_CLARIFY_REPLY);
+    assert.ok(hungry.body.listings.length > 0);
+    assert.deepEqual(hungry.body.listings.map((row) => row.name), coffee.body.listings.map((row) => row.name));
+    assert.ok(!hungry.body.chips.some((chip) => /Hotels\?|Banks\?|Lawyers\?|Eat\?/i.test(chip)));
+});
+
+test('that cafe and the second stay on the shown listing set', async () => {
+    const coffeeRows = [VANMAI_COFFEE, ASTER_COFFEE, COMMA_COFFEE];
+    const catalog = [...coffeeRows, FIRST_COMMERCIAL_BANK, FIRST_PACIFIC_MINING];
+    const searchCoffeeSet = async (query) => searchLikeServer(catalog, query);
+
+    const listed = await handleChatRequest({
+        messages: [{ role: 'user', content: 'coffee in Vientiane' }],
+        env: {},
+        searchBusinesses: searchCoffeeSet
+    });
+    const names = listed.body.listings.map((row) => row.name);
+    assert.deepEqual(names.slice().sort(), coffeeRows.map((row) => row.name).sort());
+    assert.equal(names.includes('First Commercial Bank'), false);
+
+    const aboutIt = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'coffee in Vientiane' },
+            { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+            { role: 'user', content: 'tell me about it' }
+        ],
+        env: {},
+        searchBusinesses: searchCoffeeSet
+    });
+    const expectCardReply = (reply, listingName) => {
+        if (listingName === 'Comma Coffee') {
+            assert.match(reply, /Roasts Lao beans in Vientiane and sells bags to cafes/);
+        } else {
+            assert.match(reply, new RegExp(listingName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+        }
+        assert.doesNotMatch(reply, /public listing|wifi|notes|First Commercial Bank|price|hours/i);
+    };
+
+    assert.deepEqual(aboutIt.body.listings.map((row) => row.name), names);
+    expectCardReply(aboutIt.body.reply, names[0]);
+
+    const second = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'coffee in Vientiane' },
+            { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+            { role: 'user', content: 'the second' }
+        ],
+        env: {},
+        searchBusinesses: searchCoffeeSet
+    });
+    assert.deepEqual(second.body.listings.map((row) => row.name), names);
+    expectCardReply(second.body.reply, names[1]);
+
+    const rich = await handleChatRequest({
+        messages: [
+            { role: 'user', content: 'coffee in Vientiane' },
+            { role: 'assistant', content: 'Here are coffee spots in Vientiane.' },
+            { role: 'user', content: 'tell me about the third' }
+        ],
+        env: {},
+        searchBusinesses: searchCoffeeSet
+    });
+    expectCardReply(rich.body.reply, names[2]);
+});
+
+test('a real First Commercial Bank name still searches that business', async () => {
+    const result = await handleChatRequest({
+        messages: [{ role: 'user', content: 'First Commercial Bank' }],
+        env: {},
+        searchBusinesses: async (query) => {
+            assert.doesNotMatch(query, /coffee/i);
+            return searchTranscriptCatalog(query);
+        }
+    });
+    assert.ok(result.body.listings.some((row) => row.name === 'First Commercial Bank'));
+    assert.equal(result.body.listings.some((row) => /coffee/i.test(row.name)), false);
 });
 

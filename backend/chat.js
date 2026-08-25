@@ -31,16 +31,20 @@ const {
     tokenize,
     isGreeting,
     isFollowUp,
+    isCardRefFollowUp,
+    cardRefIndex,
     mentionsOutsideCoverage,
     decodeListingFields,
     namedCategoryConstraint,
-    LOCATION_HINTS
+    LOCATION_HINTS,
+    EMPTY_LINE,
+    EMPTY_OUTSIDE_LINE
 } = require('./search-query');
 const { pickClarifyChips, mapListing } = require('./categories');
 const { STRICT_COPY_TOKENS, copyTokensInText } = require('./copy-tokens');
 
 const CHAT_LISTING_LIMIT = 8;
-const CHAT_HISTORY_LIMIT = 8;
+const CHAT_HISTORY_LIMIT = 16;
 const CHAT_CONTENT_MAX = 2000;
 const XAI_HOST = 'api.x.ai';
 const XAI_PATH = '/v1/chat/completions';
@@ -60,6 +64,13 @@ const MORE_FOLLOW_UP_CUES = new Set(['others', 'another', 'more', 'else']);
 
 const VAGUE_FOOD_TOKENS = new Set(['hungry', 'eat', 'food']);
 const VAGUE_NEED_TOKENS = new Set(['hungry', 'eat', 'food', 'bored', 'help']);
+const FOOD_DOMAIN_TOKENS = new Set([
+    'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'food', 'eat', 'hungry', 'sushi', 'japanese', 'ramen',
+    'thai', 'lao', 'chinese', 'western', 'bakery', 'bar',
+    'lunch', 'dinner', 'breakfast'
+]);
+const THIN_DESCRIPTION_RE = /\bis a public listing\b|^a public listing\.?$|^contact\s+(email|phone|us)\b/i;
 
 const GREETING_REPLY = 'Welcome. Looking to eat, drink, stay, or something else — and in which city?';
 const FOOD_CLARIFY_REPLY = 'What kind of food, and in which city?';
@@ -209,6 +220,40 @@ function listingForModel(row) {
     return out;
 }
 
+function isThinDescription(description) {
+    const text = String(description || '').trim();
+    if (!text) return true;
+    if (THIN_DESCRIPTION_RE.test(text)) return true;
+    return !stripSpokenContact(text);
+}
+
+function cardFactsReply(listing) {
+    const name = String((listing && listing.name) || '').trim();
+    const city = String((listing && listing.city) || '').trim();
+    const website = String((listing && listing.website) || '').trim();
+    if (!name) return 'That listing is on the card.';
+    if (city && website) return `${name} is listed in ${city}. The card has the website.`;
+    if (city) return `${name} is listed in ${city}.`;
+    if (website) return `${name} is in the directory. The card has the website.`;
+    return `${name} is in the directory.`;
+}
+
+/**
+ * Speak about one already-shown card. Public description if it is not a
+ * thin template; otherwise only name / city / website. Never notes, phone,
+ * email, wifi, hours, or prices unless those exact words are already in
+ * the public description.
+ */
+function specificCardReply(row) {
+    const decoded = decodeListingFields(row) || {};
+    const description = String(decoded.description || '').trim();
+    if (description && !isThinDescription(description)) {
+        const spoken = stripSpokenContact(description);
+        return spoken.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 2).join(' ');
+    }
+    return cardFactsReply(decoded);
+}
+
 function isAmenityFollowUp(query) {
     const text = String(query || '');
     if (namedCategoryConstraint(parseSearchQuery(text).contentTerms)) return false;
@@ -230,13 +275,49 @@ function isMoreFollowUp(query) {
     return isFollowUp(text);
 }
 
+function isRefinementTurn(turn) {
+    return isAmenityFollowUp(turn)
+        || isPriceFollowUp(turn)
+        || isMoreFollowUp(turn)
+        || isCardRefFollowUp(turn);
+}
+
 function lastSpecifiedQuery(historyTurns) {
     for (let i = (historyTurns || []).length - 1; i >= 0; i--) {
         const turn = historyTurns[i];
-        // Amenity / price / "any others?" are refinements, not a new keyword search.
-        if (isAmenityFollowUp(turn) || isPriceFollowUp(turn) || isMoreFollowUp(turn)) continue;
+        // Amenity / price / "any others?" / "the first one" refine the current set.
+        if (isRefinementTurn(turn)) continue;
+        if (detectClarifyKind(turn) === 'food' || detectClarifyKind(turn) === 'need') continue;
         const parsed = parseSearchQuery(turn);
         if (!parsed.isEmpty) return String(turn || '').trim();
+    }
+    return '';
+}
+
+function isDeadEndAssistantReply(text) {
+    const reply = String(text || '').trim();
+    return reply === EMPTY_LINE
+        || reply === EMPTY_OUTSIDE_LINE
+        || reply === FOOD_CLARIFY_REPLY
+        || reply === NEED_CLARIFY_REPLY
+        || reply === GREETING_REPLY
+        || reply === CITY_CLARIFY_REPLY
+        || reply === OUTSIDE_COVERAGE_REPLY;
+}
+
+function lastSuccessfulSpecifiedQuery(messages) {
+    const list = messages || [];
+    for (let i = list.length - 1; i >= 0; i--) {
+        const msg = list[i];
+        if (!msg || msg.role !== 'user') continue;
+        const turn = String(msg.content || '').trim();
+        if (!turn || isRefinementTurn(turn)) continue;
+        if (detectClarifyKind(turn) === 'food' || detectClarifyKind(turn) === 'need') continue;
+        const parsed = parseSearchQuery(turn);
+        if (parsed.isEmpty) continue;
+        const following = list.slice(i + 1).find((item) => item && item.role === 'assistant');
+        if (following && isDeadEndAssistantReply(following.content)) continue;
+        return turn;
     }
     return '';
 }
@@ -300,11 +381,30 @@ function detectClarifyKind(query) {
     return null;
 }
 
+function isFoodDomainTurn(turn) {
+    if (detectClarifyKind(turn) === 'food') return true;
+    const tokens = tokenize(turn);
+    const terms = parseSearchQuery(turn).contentTerms || [];
+    return terms.some((term) => FOOD_DOMAIN_TOKENS.has(term))
+        || tokens.some((token) => FOOD_DOMAIN_TOKENS.has(token));
+}
+
+function isFoodThreadFollowUp(latest, historyTurns) {
+    if (!(historyTurns || []).length) return false;
+    if (detectClarifyKind(latest) !== 'food') return false;
+    return historyTurns.some(isFoodDomainTurn);
+}
+
 function shouldClarify(latest, historyTurns) {
-    if ((historyTurns || []).length && (isAmenityFollowUp(latest) || isPriceFollowUp(latest))) {
+    if ((historyTurns || []).length && (
+        isAmenityFollowUp(latest)
+        || isPriceFollowUp(latest)
+        || isCardRefFollowUp(latest)
+    )) {
         return null;
     }
     if ((historyTurns || []).length && isFollowUp(latest)) return null;
+    if (isFoodThreadFollowUp(latest, historyTurns)) return null;
     if (needsCityClarify(latest)) return 'city';
     if (isAmenityFollowUp(latest)) return null;
     return detectClarifyKind(latest);
@@ -514,10 +614,14 @@ async function handleChatRequest({
     const amenityFollowUp = isAmenityFollowUp(latest);
     const priceFollowUp = isPriceFollowUp(latest);
     const moreFollowUp = isMoreFollowUp(latest);
-    const keepPriorListings = (amenityFollowUp || priceFollowUp || moreFollowUp) && historyTurns.length > 0;
+    const cardRefFollowUp = isCardRefFollowUp(latest);
+    const foodThreadFollowUp = isFoodThreadFollowUp(latest, historyTurns);
+    const keepPriorListings = (
+        amenityFollowUp || priceFollowUp || moreFollowUp || cardRefFollowUp || foodThreadFollowUp
+    ) && historyTurns.length > 0;
     let query = searchQueryFromMessages(normalized.messages);
     if (keepPriorListings) {
-        const prior = lastSpecifiedQuery(historyTurns);
+        const prior = lastSuccessfulSpecifiedQuery(normalized.messages) || lastSpecifiedQuery(historyTurns);
         if (prior) query = prior;
     }
     let parsed = parseSearchQuery(query);
@@ -555,15 +659,20 @@ async function handleChatRequest({
     const modelListings = listings.map(listingForModel).filter(Boolean);
     const template = searchPayload({ query, parsed, listings, truncated, retried: false });
     const safeLocale = normalizeLocale(locale);
+    const cardReply = cardRefFollowUp && shown.length
+        ? specificCardReply(shown[Math.max(0, cardRefIndex(latest, shown.length))])
+        : '';
     const searchReply = priceFollowUp
         ? MISSING_PRICE_REPLY
         : (amenityFollowUp
             ? MISSING_AMENITY_REPLY
-            : (noMoreInCity
-                ? NO_MORE_REPLY
-                : (!listings.length && mentionsOutsideCoverage(query || latest)
-                    ? OUTSIDE_COVERAGE_REPLY
-                    : template.reply)));
+            : (cardReply
+                ? cardReply
+                : (noMoreInCity
+                    ? NO_MORE_REPLY
+                    : (!listings.length && mentionsOutsideCoverage(query || latest)
+                        ? OUTSIDE_COVERAGE_REPLY
+                        : template.reply))));
 
     const respond = (mode, reply) => {
         const spoken = sanitizeSpokenReply(reply, modelListings);
@@ -582,7 +691,7 @@ async function handleChatRequest({
     };
 
     const apiKey = getChatApiKey(env);
-    if (!apiKey || amenityFollowUp || priceFollowUp || !modelListings.length) {
+    if (!apiKey || amenityFollowUp || priceFollowUp || cardRefFollowUp || !modelListings.length) {
         return respond('search', searchReply);
     }
 
@@ -629,7 +738,12 @@ module.exports = {
     isAmenityFollowUp,
     isPriceFollowUp,
     isMoreFollowUp,
+    isCardRefFollowUp,
+    cardRefIndex,
+    isThinDescription,
+    specificCardReply,
     lastSpecifiedQuery,
+    lastSuccessfulSpecifiedQuery,
     moreFollowUpOffset,
     needsCityClarify,
     requestedStrictCopyTokens,

@@ -459,21 +459,18 @@
             const category = (terms || []).find((term) => !CHAT_LOCATION_HINTS.has(term)) || '';
             const hasCity = (terms || []).some((term) => CHAT_LOCATION_HINTS.has(term));
             const chips = [];
-            if (category === 'coffee' && !hasCity) {
-                chips.push('In Vientiane?');
-                chips.push('Hotels instead?');
-            } else {
-                if (!hasCity) {
-                    const city = dominantCityName(results);
-                    if (city) chips.push(`In ${city}?`);
-                }
-                if (category === 'coffee') chips.push('Hotels instead?');
-                else if (category === 'hotel' || category === 'hotels') chips.push('Coffee instead?');
-                else if (category) chips.push('In Vientiane?');
+            const hasResults = (results || []).length > 0;
+            if (!hasCity) {
+                const city = dominantCityName(results);
+                if (city) chips.push(`In ${city}?`);
+                else if (!hasResults) chips.push('Which city?');
+                else chips.push('In Vientiane?');
             }
-            if ((results || []).length) {
+            if (hasResults) {
                 if (!chips.includes('Any others?')) chips.push('Any others?');
                 if (!chips.includes('Open late?')) chips.push('Open late?');
+            } else if (category && !chips.includes('Any others?')) {
+                chips.push('Any others?');
             }
             return chips.slice(0, 3);
         };
@@ -838,8 +835,8 @@
             sendButtonChat.disabled = true;
             addThinkingIndicator();
 
-            userTurns = [...userTurns, prompt].slice(-8);
-            conversationTurns = [...conversationTurns, { role: 'user', content: prompt }].slice(-8);
+            userTurns = [...userTurns, prompt].slice(-16);
+            conversationTurns = [...conversationTurns, { role: 'user', content: prompt }].slice(-16);
             const enableButtons = () => {
                 sendButton.disabled = false;
                 sendButtonChat.disabled = false;
@@ -849,7 +846,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    messages: conversationTurns.slice(-8),
+                    messages: conversationTurns.slice(-16),
                     locale: document.documentElement.lang || navigator.language || 'en'
                 })
             })
@@ -865,7 +862,7 @@
                 })
                 .then((data) => {
                     const listings = Array.isArray(data.listings) ? data.listings : [];
-                    conversationTurns = [...conversationTurns, { role: 'assistant', content: data.reply }].slice(-8);
+                    conversationTurns = [...conversationTurns, { role: 'assistant', content: data.reply }].slice(-16);
                     addAIResponse(listings, {
                         reply: data.reply,
                         chips: data.chips,
