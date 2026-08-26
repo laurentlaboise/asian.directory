@@ -48,18 +48,23 @@ const STOPWORDS = new Set([
     'best', 'better', 'good', 'great', 'need', 'want', 'some',
     'places', 'place', 'spot', 'spots', 'shop', 'shops',
     'hello', 'hi', 'hey', 'i', 'my', 'our',
+    'just', 'get', 'got', 'landed', 'arrived', 'something',
+    'does', 'why', 'pick', 'night', 'which',
     // Follow-up / filler words. They refine a prior turn; they are not listing text.
     'cheaper', 'cheap', 'late', 'open', 'others', 'another', 'more',
     'else', 'instead', 'again', 'nearby', 'also', 'any',
     'business', 'businesses',
-    'ones', 'company', 'companies',
+    'ones', 'one', 'company', 'companies',
+    // Card-reference leftovers. "the first one" is not a business named First.
+    'tell', 'first', 'second', 'third', 'fourth', 'fifth',
+    'sixth', 'seventh', 'eighth', 'last', 'that', 'this', 'though',
     // Vague / junk tokens. Do not AND these into SQL or treat them as a category.
     'what', 'should', 'where', 'hungry', 'eat', 'bored', 'help',
     // Amenity / quality follow-ups that are still not listing text.
     // wifi / working / laptop are copy-tokens: if the word was copied into
     // keywords they AND and filter. hours/reviews stay stopwords.
     // family/families is a quality ask, not a listing token (would retry to a school).
-    'work', 'hours', 'which', 'they', 'have', 'only',
+    'work', 'hours', 'they', 'have', 'only',
     'reviews', 'review',
     'family', 'families', 'kids', 'children'
 ]);
@@ -72,8 +77,39 @@ const FOLLOW_UP_CUES = new Set([
     'wifi', 'working', 'work', 'hours', 'which', 'they', 'have', 'only',
     'reviews', 'review', 'laptop', 'laptops',
     'ones', 'family', 'families', 'kids', 'children',
-    'price', 'prices', 'parking'
+    'price', 'prices', 'parking',
+    'that', 'this', 'though'
 ]);
+
+const CARD_REF_ORDINALS = {
+    first: 0,
+    '1st': 0,
+    second: 1,
+    '2nd': 1,
+    third: 2,
+    '3rd': 2,
+    fourth: 3,
+    '4th': 3,
+    fifth: 4,
+    '5th': 4,
+    sixth: 5,
+    '6th': 5,
+    seventh: 6,
+    '7th': 6,
+    eighth: 7,
+    '8th': 7,
+    last: -1
+};
+
+const CARD_REF_NOUNS = new Set([
+    'one', 'ones', 'listing', 'listings', 'place', 'places',
+    'spot', 'spots', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'hotel', 'hotels', 'card', 'cards', 'result', 'results',
+    'match', 'matches', 'option', 'options'
+]);
+
+const CARD_REF_POINTERS = new Set(['that', 'this', 'it', 'them']);
+const CARD_REF_VERBS = new Set(['tell', 'about', 'what', 'how']);
 
 const {
     SEARCHABLE_COPY_TOKENS,
@@ -167,11 +203,13 @@ const PLACE_WORDS = new Set([
 // Food / drink / stay (and lawyer as professional-ok). Boost consumer-facing
 // name/category; demote industrial rows only for consumer place-words.
 const CONSUMER_INTENTS = new Set([
-    'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'coffee', 'coffee shop', 'coffee house', 'cafe', 'cafes',
+    'restaurant', 'restaurants',
     'hotel', 'hotels', 'stay', 'eat', 'food', 'lawyer'
 ]);
 const CONSUMER_PLACE_WORDS = new Set([
-    'coffee', 'cafe', 'cafes', 'restaurant', 'restaurants',
+    'coffee', 'coffee shop', 'coffee house', 'cafe', 'cafes',
+    'restaurant', 'restaurants',
     'hotel', 'hotels', 'stay', 'food'
 ]);
 const CONSUMER_SIGNALS = [
@@ -286,6 +324,33 @@ function nextRetryQuery(parsed) {
         };
     }
 
+    const terms = parsed.contentTerms || [];
+    const categoryTerms = terms.filter((term) => isCategoryToken(term));
+    const locationContent = terms.filter((term) => LOCATION_HINTS.has(term));
+
+    // A cuisine token is the ask. Do not retry by dropping sushi/japanese
+    // in favor of a prior coffee leftover. Do not drop construction/etc.
+    const cuisineTerms = terms.filter((term) => CUISINE_STYLES.has(term));
+    const coffeeLeftover = terms.filter((term) => (
+        term === 'coffee'
+        || term === 'coffee shop'
+        || term === 'coffee house'
+        || term === 'cafe'
+        || term === 'cafes'
+    ));
+    const otherExtras = terms.filter((term) => (
+        !CUISINE_STYLES.has(term)
+        && !LOCATION_HINTS.has(term)
+        && !coffeeLeftover.includes(term)
+    ));
+    if (cuisineTerms.length && coffeeLeftover.length && !otherExtras.length) {
+        return {
+            ...parsed,
+            contentTerms: [...cuisineTerms, ...locationContent],
+            isEmpty: false
+        };
+    }
+
     // Copy-tokens are exact filters (wifi, currently building, chinese).
     // Do not retry by dropping them — that dumped construction firms.
     if ((parsed.contentTerms || []).some((term) => SEARCHABLE_COPY_TOKENS.has(term))) {
@@ -294,9 +359,6 @@ function nextRetryQuery(parsed) {
 
     // Named category + leftover quality/filler (families, companies): drop the
     // extras and keep category + city. Never retry "families" alone (school).
-    const terms = parsed.contentTerms || [];
-    const categoryTerms = terms.filter((term) => isCategoryToken(term));
-    const locationContent = terms.filter((term) => LOCATION_HINTS.has(term));
     const extras = terms.filter((term) => (
         !isCategoryToken(term)
         && !LOCATION_HINTS.has(term)
@@ -429,6 +491,17 @@ function mergeCopyPhrases(contentTerms, query) {
         drop.add('wi');
         drop.add('fi');
     }
+    const text = String(query || '').toLowerCase();
+    if (/\bcoffee\s+shops?\b/.test(text)) {
+        phrases.push('coffee shop');
+        drop.add('shop');
+        drop.add('shops');
+    }
+    if (/\bcoffee\s+houses?\b/.test(text)) {
+        phrases.push('coffee house');
+        drop.add('house');
+        drop.add('houses');
+    }
     for (const term of contentTerms || []) {
         if (drop.has(term) || seen.has(term)) continue;
         seen.add(term);
@@ -454,8 +527,73 @@ function mentionsOutsideCoverage(query) {
     return tokenize(query).some((token) => OUT_OF_COVERAGE.has(token));
 }
 
+function isCardRefFollowUp(query) {
+    const text = String(query || '').trim();
+    if (!text || isGreeting(text)) return false;
+
+    if (/\b(?:tell me about|what about|how about)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|last)\b/i.test(text)) {
+        return true;
+    }
+    if (/\bthe\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|last)\s+(?:one|ones|listing|place|spot|cafe|restaurant|hotel|card)?\b/i.test(text)) {
+        return true;
+    }
+    if (/\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth)\s+one\b/i.test(text)) {
+        return true;
+    }
+
+    const tokens = tokenize(text);
+    if (!tokens.length) return false;
+
+    const leftover = tokens.filter((token) => (
+        !STOPWORDS.has(token)
+        && !GREETINGS.has(token)
+        && !FOLLOW_UP_CUES.has(token)
+        && !CARD_REF_NOUNS.has(token)
+        && CARD_REF_ORDINALS[token] === undefined
+        && !CARD_REF_POINTERS.has(token)
+        && !CARD_REF_VERBS.has(token)
+        && !COUNTRY_GENERICS[token]
+        && token.length > 2
+    ));
+    if (leftover.length) return false;
+
+    if (/\b(tell me about|what about|how about|how(?:'|’)s|how is)\s+(it|that|this|them)\b/i.test(text)) {
+        return true;
+    }
+    if (/^(it|that|this)[.!?]*$/i.test(text)) return true;
+
+    const hasOrdinal = tokens.some((token) => CARD_REF_ORDINALS[token] !== undefined);
+    const hasNoun = tokens.some((token) => CARD_REF_NOUNS.has(token));
+    const hasPointer = tokens.some((token) => CARD_REF_POINTERS.has(token));
+    if (hasOrdinal) return true;
+    if (hasPointer && (hasNoun || tokens.length <= 3)) return true;
+    return false;
+}
+
+function cardRefIndex(query, count) {
+    const size = Number(count) || 0;
+    if (size <= 0) return -1;
+    const tokens = tokenize(query);
+    for (const token of tokens) {
+        if (CARD_REF_ORDINALS[token] === undefined) continue;
+        const raw = CARD_REF_ORDINALS[token];
+        if (raw === -1) return size - 1;
+        return raw < size ? raw : 0;
+    }
+    return 0;
+}
+
 function isFollowUp(query) {
     if (isGreeting(query)) return false;
+    const latestTerms = parseSearchQuery(query).contentTerms || [];
+    if (hasCuisineStyle(latestTerms)) return false;
+    if (
+        /\bpick(\s+one)?\b/i.test(String(query || ''))
+        && latestTerms.some((term) => !LOCATION_HINTS.has(term))
+    ) {
+        return false;
+    }
+    if (isCardRefFollowUp(query)) return true;
     if (/\bgood\s+for\b/i.test(String(query || ''))) return true;
     const tokens = tokenize(query);
     if (!tokens.length) return false;
@@ -929,41 +1067,32 @@ function uniqueChips(list) {
     return out;
 }
 
-function buildFollowUpChips({ parsed, results }) {
+function buildFollowUpChips({ parsed, results, threadHasCity, canAnswerHours } = {}) {
     const terms = (parsed && parsed.contentTerms) || [];
     const category = terms.find((term) => (
         !LOCATION_HINTS.has(term) && !STRICT_COPY_TOKENS.has(term) && !FOLLOW_UP_CUES.has(term)
     )) || '';
-    const hasCity = terms.some((term) => LOCATION_HINTS.has(term));
+    const hasCity = Boolean(threadHasCity) || terms.some((term) => LOCATION_HINTS.has(term));
     const chips = [];
+    const hasResults = (results || []).length > 0;
 
-    if (!category && !hasCity && !(results || []).length) {
+    if (!category && !hasCity && !hasResults) {
         chips.push('Which city?');
         return chips;
     }
 
-    if (category === 'coffee' && !hasCity) {
-        chips.push('In Vientiane?');
-        chips.push('Hotels instead?');
-    } else if (category === 'coffee') {
-        chips.push('Any others?');
-        chips.push('In Vientiane?');
-    } else {
-        if (!hasCity) {
-            const city = dominantCityName(results);
-            if (city) chips.push(`In ${city}?`);
-            else chips.push('Which city?');
-        }
-        if (category === 'hotel' || category === 'hotels' || category === 'stay') {
-            chips.push('Coffee instead?');
-        } else if (category && !chips.some((chip) => /^In /i.test(chip))) {
-            chips.push('In Vientiane?');
-        }
+    // After a listing set, stay on that set. Do not restart eat/drink/stay
+    // or jump to Hotels? / banks. Re-offer a city only when none is locked.
+    if (!hasCity) {
+        const city = dominantCityName(results);
+        if (city) chips.push(`In ${city}?`);
+        else if (!hasResults) chips.push('Which city?');
+        else chips.push('In Vientiane?');
     }
 
-    if ((results || []).length) {
+    if (hasResults) {
         if (!chips.includes('Any others?')) chips.push('Any others?');
-        if (!chips.includes('Open late?')) chips.push('Open late?');
+        if (canAnswerHours && !chips.includes('Open late?')) chips.push('Open late?');
     } else if (category && !chips.includes('Any others?')) {
         chips.push('Any others?');
     }
@@ -975,6 +1104,8 @@ module.exports = {
     STOPWORDS,
     GREETINGS,
     FOLLOW_UP_CUES,
+    CARD_REF_ORDINALS,
+    CARD_REF_NOUNS,
     COUNTRY_GENERICS,
     LOCATION_HINTS,
     OUT_OF_COVERAGE,
@@ -1001,6 +1132,8 @@ module.exports = {
     termAliases,
     isGreeting,
     isFollowUp,
+    isCardRefFollowUp,
+    cardRefIndex,
     mentionsOutsideCoverage,
     reformulateWithHistory,
     parseHistoryParam,
